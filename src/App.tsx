@@ -9,6 +9,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import AdminPage from "@/pages/AdminPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
+import DemoBanner from "@/components/layout/DemoBanner";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ export default function App() {
             />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          <DemoBanner />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
