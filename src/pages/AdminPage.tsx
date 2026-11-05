@@ -774,7 +774,6 @@ function ClaimQueue() {
   });
 
   const GOLD = "#D97706";
-  const GREEN = "#166534";
 
   function DiffRow({ label, original, submitted }: { label: string; original: string | null; submitted: string | null }) {
     const changed = original && submitted && original.toLowerCase().trim() !== submitted.toLowerCase().trim();

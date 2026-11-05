@@ -16,6 +16,7 @@ const ORG_TYPE_LABELS: Record<OrgType, string> = {
   medical:     "Medical / Health",
   housing:     "Housing",
   government:  "Government",
+  community:   "Community Org",
   other:       "Organization",
 };
 
@@ -26,6 +27,7 @@ const ORG_TYPE_COLOR: Record<OrgType, string> = {
   medical:     "#3A8FE0",
   housing:     "#4A7C6F",
   government:  "#5C7380",
+  community:   "#2A6F9D",
   other:       "#5C7380",
 };
 
