@@ -1,0 +1,32 @@
+-- Add extended columns to prm_leads for full PRM import
+-- Run BEFORE prm_import.sql
+
+ALTER TABLE prm_leads
+  ADD COLUMN IF NOT EXISTS dba_name             text,
+  ADD COLUMN IF NOT EXISTS source_document      text,
+  ADD COLUMN IF NOT EXISTS service_area         text,
+  ADD COLUMN IF NOT EXISTS coc_status           text,
+  ADD COLUMN IF NOT EXISTS coc_name             text,
+  ADD COLUMN IF NOT EXISTS coc_county_class     text,
+  ADD COLUMN IF NOT EXISTS sub_category         text,
+  ADD COLUMN IF NOT EXISTS service_tags         text,
+  ADD COLUMN IF NOT EXISTS population_served    text,
+  ADD COLUMN IF NOT EXISTS eligibility_notes    text,
+  ADD COLUMN IF NOT EXISTS hours_of_operation   text,
+  ADD COLUMN IF NOT EXISTS fees_cost            text,
+  ADD COLUMN IF NOT EXISTS referral_required    text,
+  ADD COLUMN IF NOT EXISTS intake_process       text,
+  ADD COLUMN IF NOT EXISTS required_documents   text,
+  ADD COLUMN IF NOT EXISTS date_added           text,
+  ADD COLUMN IF NOT EXISTS date_last_verified   text,
+  ADD COLUMN IF NOT EXISTS contact_info_valid   text,
+  ADD COLUMN IF NOT EXISTS last_contact_method  text,
+  ADD COLUMN IF NOT EXISTS next_follow_up_date  text,
+  ADD COLUMN IF NOT EXISTS relationship_owner   text,
+  ADD COLUMN IF NOT EXISTS priority             text,
+  ADD COLUMN IF NOT EXISTS duplicate_flag       text,
+  ADD COLUMN IF NOT EXISTS duplicate_of         text,
+  ADD COLUMN IF NOT EXISTS verified_active      text,
+  ADD COLUMN IF NOT EXISTS data_quality_flag    text,
+  ADD COLUMN IF NOT EXISTS issues_notes         text,
+  ADD COLUMN IF NOT EXISTS ein                  text;
