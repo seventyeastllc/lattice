@@ -44,6 +44,7 @@ export default function DirectoryPage() {
   const [service, setService]       = useState("all");
   const [fundingOnly, setFundingOnly] = useState(false);
   const [confOnly, setConfOnly]     = useState(false);
+  const [apptOnly, setApptOnly]     = useState(false);
   const [modalOrg, setModalOrg]     = useState<DirectoryOrg | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -68,12 +69,13 @@ export default function DirectoryPage() {
       if (service !== "all" && !org.services.some((s) => s.category === service)) return false;
       if (fundingOnly && !org.has_funding_available) return false;
       if (confOnly && !org.contact?.accepts_case_conference) return false;
+      if (apptOnly && org.appointment_required !== false) return false;
       return true;
     });
-  }, [orgs, search, region, county, orgType, service, fundingOnly, confOnly]);
+  }, [orgs, search, region, county, orgType, service, fundingOnly, confOnly, apptOnly]);
 
   const activeFilterCount = [
-    region !== "all", county !== "all", orgType !== "all", service !== "all", fundingOnly, confOnly,
+    region !== "all", county !== "all", orgType !== "all", service !== "all", fundingOnly, confOnly, apptOnly,
   ].filter(Boolean).length;
 
   function clearFilters() {
@@ -84,6 +86,7 @@ export default function DirectoryPage() {
     setService("all");
     setFundingOnly(false);
     setConfOnly(false);
+    setApptOnly(false);
   }
 
   return (
@@ -221,6 +224,10 @@ export default function DirectoryPage() {
                   <input type="checkbox" checked={confOnly} onChange={(e) => setConfOnly(e.target.checked)} />
                   Case Conference
                 </label>
+                <label className="dir-toggle">
+                  <input type="checkbox" checked={apptOnly} onChange={(e) => setApptOnly(e.target.checked)} />
+                  Walk-in Only
+                </label>
               </>
             )}
 
@@ -277,6 +284,10 @@ export default function DirectoryPage() {
                   <input type="checkbox" checked={confOnly} onChange={(e) => setConfOnly(e.target.checked)} />
                   Accepts Case Conference
                 </label>
+                <label className="dir-toggle">
+                  <input type="checkbox" checked={apptOnly} onChange={(e) => setApptOnly(e.target.checked)} />
+                  Walk-in Only
+                </label>
               </>
             )}
           </div>
@@ -315,15 +326,20 @@ export default function DirectoryPage() {
             ) : isError ? (
               <p style={{ color: "#B91C1C", fontSize: "0.875rem", margin: 0 }}>Unable to load directory. Showing cached data.</p>
             ) : (
-              <p style={{ color: "#5C7380", fontSize: "0.875rem", margin: 0 }}>
-                <strong style={{ color: "#1A2B35" }}>{filtered.length}</strong>{" "}
-                organization{filtered.length !== 1 ? "s" : ""} found
-                {activeFilterCount > 0 && (
-                  <span style={{ color: "#2A9D8F", marginLeft: "0.5rem" }}>
-                    · {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active
-                  </span>
-                )}
-              </p>
+              <>
+                <p style={{ color: "#5C7380", fontSize: "0.875rem", margin: 0 }}>
+                  <strong style={{ color: "#1A2B35" }}>{filtered.length}</strong>{" "}
+                  organization{filtered.length !== 1 ? "s" : ""} found
+                  {activeFilterCount > 0 && (
+                    <span style={{ color: "#2A9D8F", marginLeft: "0.5rem" }}>
+                      · {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active
+                    </span>
+                  )}
+                </p>
+                <p style={{ color: "#5C7380", fontSize: "0.8rem", margin: "0.25rem 0 0" }}>
+                  Network database reflects CRM records. Verified published listings are added as organizations join.
+                </p>
+              </>
             )}
           </div>
 

@@ -98,9 +98,28 @@ export default function OrgProfilePage() {
                 <h1 style={{ color: "#ffffff", fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, margin: "0 0 0.5rem", lineHeight: 1.15 }}>
                   {org.name}
                 </h1>
-                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.875rem", margin: 0 }}>
-                  {org.county} County
-                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.875rem", margin: 0 }}>
+                    {org.service_area_counties && org.service_area_counties.length > 1
+                      ? `Serves ${org.service_area_counties.slice(0, 4).join(", ")}${org.service_area_counties.length > 4 ? ` + ${org.service_area_counties.length - 4} more` : ""}`
+                      : `${org.county} County`}
+                  </p>
+                  {org.last_verified_at && (
+                    <span style={{ color: "rgba(42,157,143,0.85)", fontSize: "0.75rem", fontWeight: 600 }}>
+                      · Verified {new Date(org.last_verified_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                    </span>
+                  )}
+                  {org.website && (
+                    <a
+                      href={org.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#2A9D8F", fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none" }}
+                    >
+                      {org.website.replace(/^https?:\/\//, "").replace(/\/$/, "").slice(0, 40)}{org.website.replace(/^https?:\/\//, "").length > 40 ? "…" : ""} ↗
+                    </a>
+                  )}
+                </div>
               </>
             )}
 
@@ -165,17 +184,73 @@ export default function OrgProfilePage() {
                   </div>
                 )}
 
-                {/* Eligibility & Access — Phase 2 placeholder */}
+                {/* Eligibility & Access */}
                 <div className="profile-card">
                   <p className="profile-section-title">Eligibility &amp; Access</p>
-                  <div className="phase2-placeholder">
-                    <p style={{ color: "#E9A26B", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>
-                      Coming in Phase 2
-                    </p>
-                    <p style={{ color: "#5C7380", fontSize: "0.875rem", lineHeight: 1.65, margin: 0 }}>
-                      Eligibility guidance, documentation requirements, and intake instructions will appear here once TSE adds this information to the listing.
-                    </p>
-                  </div>
+                  {(org.eligibility_summary || org.documentation_required || org.intake_process) ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                      {/* Appointment badge */}
+                      {org.appointment_required != null && (
+                        <div>
+                          {org.appointment_required ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", background: "rgba(233,162,107,0.12)", color: "#C97A30", fontSize: "0.8rem", fontWeight: 700, padding: "0.3rem 0.75rem", borderRadius: 20 }}>
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="2" width="10" height="9" rx="1.5" stroke="#C97A30" strokeWidth="1.4"/><path d="M4 1v2M8 1v2M1 5h10" stroke="#C97A30" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                              Appointment required
+                            </span>
+                          ) : (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem", background: "rgba(42,157,143,0.1)", color: "#2A9D8F", fontSize: "0.8rem", fontWeight: 700, padding: "0.3rem 0.75rem", borderRadius: 20 }}>
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3.5" stroke="#2A9D8F" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              Walk-in welcome
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Who can access */}
+                      {org.eligibility_summary && (
+                        <div>
+                          <p style={{ fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5C7380", margin: "0 0 0.4rem" }}>Who can access this service</p>
+                          <p style={{ color: "#1A2B35", fontSize: "0.9rem", lineHeight: 1.65, margin: 0 }}>{org.eligibility_summary}</p>
+                        </div>
+                      )}
+                      {/* What to bring */}
+                      {org.documentation_required && (
+                        <div>
+                          <p style={{ fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5C7380", margin: "0 0 0.4rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="2" y="1" width="8" height="10" rx="1.5" stroke="#5C7380" strokeWidth="1.3"/><path d="M4 4.5h4M4 6.5h4M4 8.5h2" stroke="#5C7380" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                            What to bring
+                          </p>
+                          <p style={{ color: "#1A2B35", fontSize: "0.9rem", lineHeight: 1.65, margin: 0 }}>{org.documentation_required}</p>
+                        </div>
+                      )}
+                      {/* How to get started */}
+                      {org.intake_process && (
+                        <div>
+                          <p style={{ fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5C7380", margin: "0 0 0.4rem" }}>How to get started</p>
+                          <p style={{ color: "#1A2B35", fontSize: "0.9rem", lineHeight: 1.65, margin: 0 }}>{org.intake_process}</p>
+                        </div>
+                      )}
+                      {/* Languages */}
+                      {org.languages_served && org.languages_served.length > 0 && (
+                        <div>
+                          <p style={{ fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5C7380", margin: "0 0 0.5rem" }}>Languages</p>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+                            {org.languages_served.map((lang) => (
+                              <span key={lang} style={{ background: "#F7F9F8", border: "1px solid #E2E8E6", color: "#1A2B35", fontSize: "0.8rem", fontWeight: 500, padding: "0.2rem 0.6rem", borderRadius: 3 }}>{lang}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="phase2-placeholder">
+                      <p style={{ color: "#E9A26B", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 0.4rem" }}>
+                        Information not yet available
+                      </p>
+                      <p style={{ color: "#5C7380", fontSize: "0.875rem", lineHeight: 1.65, margin: 0 }}>
+                        Eligibility guidance, documentation requirements, and intake instructions will appear here once TSE adds this information to the listing.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 

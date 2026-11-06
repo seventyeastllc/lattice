@@ -13,6 +13,15 @@ interface RawOrg {
   county: string | null;
   has_funding_available: boolean;
   is_verified: boolean;
+  website: string | null;
+  eligibility_summary: string | null;
+  documentation_required: string | null;
+  intake_process: string | null;
+  appointment_required: boolean | null;
+  languages_served: string[] | null;
+  service_area_counties: string[] | null;
+  year_established: number | null;
+  last_verified_at: string | null;
   contacts: {
     id: string;
     full_name: string;
@@ -40,6 +49,15 @@ function mapOrg(raw: RawOrg): DirectoryOrg {
     description: raw.description ?? "",
     has_funding_available: raw.has_funding_available,
     is_verified: raw.is_verified ?? false,
+    website: raw.website,
+    eligibility_summary: raw.eligibility_summary,
+    documentation_required: raw.documentation_required,
+    intake_process: raw.intake_process,
+    appointment_required: raw.appointment_required,
+    languages_served: raw.languages_served,
+    service_area_counties: raw.service_area_counties,
+    year_established: raw.year_established,
+    last_verified_at: raw.last_verified_at,
     services: raw.services
       .filter((s) => s.is_active)
       .map((s) => ({ name: s.name, category: s.category ?? "" })),
@@ -91,6 +109,8 @@ export function useDirectory() {
           .from("organizations")
           .select(
             `id, name, slug, description, org_type, county, has_funding_available, is_verified,
+             website, eligibility_summary, documentation_required, intake_process,
+             appointment_required, languages_served, service_area_counties, year_established, last_verified_at,
              contacts(id, full_name, title, phone, is_primary, accepts_case_conference),
              services(name, category, is_active)`
           )

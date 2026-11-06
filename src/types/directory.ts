@@ -33,6 +33,16 @@ export interface DirectoryOrg {
   is_verified: boolean;
   services: DirectoryService[];
   contact: DirectoryContact | null;
+  // Phase 2: eligibility & access fields
+  website?:                string | null;
+  eligibility_summary?:    string | null;
+  documentation_required?: string | null;
+  intake_process?:         string | null;
+  appointment_required?:   boolean | null;
+  languages_served?:       string[] | null;
+  service_area_counties?:  string[] | null;
+  year_established?:       number | null;
+  last_verified_at?:       string | null;
 }
 
 // Map DB service category keys to display labels
