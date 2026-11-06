@@ -121,7 +121,40 @@ export default function NavBar() {
                   textDecoration: "none",
                 }}
               >
-                Dashboard
+                My Workspace
+              </Link>
+              <Link
+                to="/resources"
+                style={{
+                  color: "#1A2B35",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                }}
+              >
+                My Resources
+              </Link>
+              <Link
+                to="/knowledge"
+                style={{
+                  color: "#1A2B35",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                }}
+              >
+                Tools
+              </Link>
+              <Link
+                to="/network"
+                style={{
+                  color: "#1A2B35",
+                  fontSize: "0.875rem",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                }}
+              >
+                My Network
               </Link>
               <button
                 onClick={handleSignOut}

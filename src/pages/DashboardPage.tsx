@@ -162,33 +162,44 @@ export default function DashboardPage() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
 
-  const quickLinks = [
+  const workspaceCards = [
     {
       label: "Partner Directory",
       description: "Search and filter organizations across Georgia's community support network.",
       href: "/directory",
-      icon: "🗂️",
+      accentColor: TEAL,
+    },
+    {
+      label: "My Resources",
+      description: "View saved organizations, build collections, and organize your resource library.",
+      href: "/resources",
+      accentColor: SAGE,
+    },
+    {
+      label: "Tools & Knowledge",
+      description: "Templates, guides, and resources to support your coordination work.",
+      href: "/knowledge",
+      accentColor: DARK,
+    },
+    {
+      label: "My Network",
+      description: "Your organization profile, connections, and coordination activity.",
+      href: "/network",
+      accentColor: "#7C6A9A",
     },
     {
       label: "My Requests",
       description: "Track connection requests you've submitted through TSE.",
       href: "#requests",
-      icon: "📋",
       onClick: () => requestsRef.current?.scrollIntoView({ behavior: "smooth" }),
-    },
-    {
-      label: "Resource Updates",
-      description: "Recent changes to partner availability and services.",
-      href: "#",
-      icon: "🔔",
-      soon: true,
+      accentColor: TEAL,
     },
     {
       label: "Account Settings",
       description: "Update your display name and account preferences.",
       href: "#",
-      icon: "⚙️",
       onClick: () => setShowProfile(true),
+      accentColor: MUTED,
     },
   ];
 
@@ -262,29 +273,21 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Quick links */}
-        <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: TEXT, marginBottom: "1.25rem" }}>What do you need today?</h2>
+        {/* Workspace nav cards */}
+        <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: TEXT, marginBottom: "1.25rem" }}>My Workspace</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1.25rem", marginBottom: "3rem" }}>
-          {quickLinks.map((link) => (
-            <div key={link.label} style={{ backgroundColor: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "1.5rem", opacity: link.soon ? 0.65 : 1, position: "relative" }}>
-              {link.soon && (
-                <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: MUTED, backgroundColor: BG, border: `1px solid ${BORDER}`, padding: "0.15rem 0.5rem", borderRadius: "9999px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Soon
-                </span>
-              )}
-              <div style={{ fontSize: "1.75rem", marginBottom: "0.75rem" }}>{link.icon}</div>
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, color: TEXT, margin: "0 0 0.375rem" }}>{link.label}</h3>
-              <p style={{ fontSize: "0.875rem", color: MUTED, margin: "0 0 1.25rem", lineHeight: 1.5 }}>{link.description}</p>
-              {!link.soon && (
-                link.onClick ? (
-                  <button onClick={link.onClick} style={{ background: "none", border: "none", padding: 0, color: TEAL, fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                    View →
-                  </button>
-                ) : (
-                  <Link to={link.href} style={{ color: TEAL, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
-                    Open →
-                  </Link>
-                )
+          {workspaceCards.map((card) => (
+            <div key={card.label} style={{ backgroundColor: SURFACE, border: `1px solid ${BORDER}`, borderTop: `3px solid ${card.accentColor}`, borderRadius: "8px", padding: "1.375rem" }}>
+              <h3 style={{ fontSize: "0.9375rem", fontWeight: 700, color: TEXT, margin: "0 0 0.375rem" }}>{card.label}</h3>
+              <p style={{ fontSize: "0.8375rem", color: MUTED, margin: "0 0 1rem", lineHeight: 1.55 }}>{card.description}</p>
+              {card.onClick ? (
+                <button onClick={card.onClick} style={{ background: "none", border: "none", padding: 0, color: TEAL, fontSize: "0.875rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  Open →
+                </button>
+              ) : (
+                <Link to={card.href} style={{ color: TEAL, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
+                  Open →
+                </Link>
               )}
             </div>
           ))}

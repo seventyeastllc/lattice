@@ -8,6 +8,9 @@ import LoginPage from "@/pages/LoginPage";
 import JoinPage from "@/pages/JoinPage";
 import DashboardPage from "@/pages/DashboardPage";
 import AdminPage from "@/pages/AdminPage";
+import ResourcesPage from "@/pages/ResourcesPage";
+import KnowledgePage from "@/pages/KnowledgePage";
+import NetworkPage from "@/pages/NetworkPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import DemoBanner from "@/components/layout/DemoBanner";
@@ -38,6 +41,30 @@ export default function App() {
               element={
                 <ProtectedRoute requiredRole="admin">
                   <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/resources"
+              element={
+                <ProtectedRoute>
+                  <ResourcesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/knowledge"
+              element={
+                <ProtectedRoute>
+                  <KnowledgePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/network"
+              element={
+                <ProtectedRoute>
+                  <NetworkPage />
                 </ProtectedRoute>
               }
             />
