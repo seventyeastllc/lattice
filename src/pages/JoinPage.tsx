@@ -907,6 +907,17 @@ export default function JoinPage() {
         .eq("record_id", selectedLead.record_id);
     }
 
+    // Send confirmation email (fire-and-forget — don't block on failure)
+    supabase.functions.invoke("application-confirmation", {
+      body: {
+        name:       form.contact_name,
+        org_name:   form.org_name,
+        tier_label: tier.label,
+        tier_color: tier.color,
+        email:      form.contact_email,
+      },
+    }).catch(() => {/* non-blocking */});
+
     setSubmitting(false);
     setStep("done");
   }

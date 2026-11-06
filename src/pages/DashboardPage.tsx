@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
+import { supabase } from "@/lib/supabase";
 import NavBar from "@/components/layout/NavBar";
 
 const TEAL   = "#2A9D8F";
@@ -58,10 +59,70 @@ function fmtDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function ProfileModal({ user, onClose }: { user: { email?: string; user_metadata?: { full_name?: string } } | null; onClose: () => void }) {
+  const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    const { error: err } = await supabase.auth.updateUser({ data: { full_name: fullName } });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    setSaved(true);
+    setTimeout(onClose, 1200);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: "12px", padding: "2rem", width: "100%", maxWidth: "420px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+          <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "#1A2B35" }}>Account Settings</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: "1.25rem", color: "#5C7380", cursor: "pointer", lineHeight: 1 }}>✕</button>
+        </div>
+
+        <div style={{ marginBottom: "1.25rem" }}>
+          <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "#1A2B35", marginBottom: "0.4rem" }}>Full Name</label>
+          <input
+            type="text"
+            value={fullName}
+            onChange={e => { setFullName(e.target.value); setSaved(false); }}
+            style={{ width: "100%", boxSizing: "border-box", padding: "0.625rem 0.875rem", border: "1px solid #E2E8E6", borderRadius: "6px", fontSize: "0.9375rem", color: "#1A2B35", outline: "none", fontFamily: "inherit" }}
+          />
+        </div>
+
+        <div style={{ marginBottom: "1.5rem" }}>
+          <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: "#1A2B35", marginBottom: "0.4rem" }}>Email</label>
+          <input
+            type="email"
+            value={user?.email ?? ""}
+            disabled
+            style={{ width: "100%", boxSizing: "border-box", padding: "0.625rem 0.875rem", border: "1px solid #E2E8E6", borderRadius: "6px", fontSize: "0.9375rem", color: "#5C7380", background: "#F7F9F8", fontFamily: "inherit" }}
+          />
+          <p style={{ margin: "0.3rem 0 0", fontSize: "0.75rem", color: "#5C7380" }}>To change your email, contact team@seedexchange.org</p>
+        </div>
+
+        {error && <p style={{ margin: "0 0 1rem", fontSize: "0.875rem", color: "#DC2626" }}>{error}</p>}
+
+        <button
+          onClick={handleSave}
+          disabled={saving || saved}
+          style={{ width: "100%", background: saved ? "#4A7C6F" : "#1E3A4A", color: "#fff", fontWeight: 700, fontSize: "0.9375rem", padding: "0.75rem", border: "none", borderRadius: "8px", cursor: saving || saved ? "default" : "pointer" }}
+        >
+          {saved ? "✓ Saved" : saving ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user, role, signOut } = useAuth();
   const { data: requests = [], isLoading } = useMyRequests();
   const requestsRef = useRef<HTMLDivElement>(null);
+  const [showProfile, setShowProfile] = useState(false);
 
   const displayName = user?.user_metadata?.full_name ?? user?.email ?? "there";
   const firstName   = typeof displayName === "string" ? displayName.split(" ")[0] : displayName;
@@ -105,14 +166,15 @@ export default function DashboardPage() {
     },
     {
       label: "Account Settings",
-      description: "Update your profile and notification preferences.",
+      description: "Update your display name and account preferences.",
       href: "#",
       icon: "⚙️",
-      soon: true,
+      onClick: () => setShowProfile(true),
     },
   ];
 
   return (
+    <>
     <div style={{ minHeight: "100vh", backgroundColor: BG }}>
       <NavBar />
 
@@ -282,5 +344,7 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+    {showProfile && <ProfileModal user={user} onClose={() => setShowProfile(false)} />}
+    </>
   );
 }
