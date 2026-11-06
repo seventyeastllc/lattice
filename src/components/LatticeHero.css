@@ -23,7 +23,7 @@
 @media(max-width:768px){.lattice-hero{min-height:auto}.lattice-ribbon{width:160%;height:100%;left:-20%;opacity:.65}}
 .lx3-hero-copy{position:relative;z-index:2;padding:87px 0 50px clamp(26px,3.55vw,60px);max-width:660px;min-width:0}
 .lx3-eyebrow{display:inline-flex;align-items:center;background:#c8e8e6;color:#123d4c;padding:10px 22px;border-radius:36px;font-size:20px;white-space:nowrap;font-weight:650;letter-spacing:-.02em;line-height:1.1}
-.lx3-hero-copy h1{font-size:clamp(54px,5.55vw,91px);letter-spacing:-.03em;line-height:1.1;font-weight:780;color:#0d344a;margin:32px 0 37px;white-space:nowrap}
+.lx3-hero-copy h1{font-size:clamp(54px,5.55vw,91px);letter-spacing:.01em;line-height:1.1;font-weight:780;color:#0d344a;margin:32px 0 37px;white-space:nowrap}
 .lx3-hero-copy h1 span{position:relative;white-space:nowrap;display:inline-block}
 .lx3-hero-copy h1 span:after{content:"";position:absolute;height:6px;border-radius:100% 100% 60% 60%;background:linear-gradient(90deg,#18ad83,#3fb34b);left:0;right:0;bottom:-18px;transform:rotate(-1.5deg)}
 .lx3-positioning{font-size:clamp(25px,2.12vw,35px);font-weight:550;letter-spacing:-.034em;line-height:1.24;margin:0 0 22px;color:#2c3d4c;max-width:620px}
