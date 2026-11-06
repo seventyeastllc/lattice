@@ -68,7 +68,7 @@ export default function ConnectionModal({ org, onClose }: Props) {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", org: "", phone: "", hmisId: "", note: "" });
+  const [form, setForm] = useState({ name: "", org: "", phone: "", note: "" });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,8 +85,7 @@ export default function ConnectionModal({ org, onClose }: Props) {
     const noteLines = [
       `FROM: ${form.name} at ${form.org}`,
       `PHONE: ${form.phone}`,
-      form.hmisId ? `HMIS: ${form.hmisId}` : "",
-      form.note    ? `NOTE: ${form.note}`   : "",
+      form.note ? `NOTE: ${form.note}` : "",
     ].filter(Boolean).join("\n");
 
     const { error: dbError } = await supabase.from("connection_requests").insert({
@@ -181,18 +180,6 @@ export default function ConnectionModal({ org, onClose }: Props) {
                   <div className="modal-field">
                     <label>Contact Phone</label>
                     <input type="tel" required placeholder="(xxx) xxx-xxxx" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-                  </div>
-                  <div className="modal-field">
-                    <label>
-                      HMIS Client ID{" "}
-                      <span style={{ fontWeight: 400, color: "#5C7380" }}>(optional — HMIS users only)</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Client ID from your HMIS system"
-                      value={form.hmisId}
-                      onChange={(e) => setForm({ ...form, hmisId: e.target.value })}
-                    />
                   </div>
                   <div className="modal-field">
                     <label>Note <span style={{ fontWeight: 400, color: "#5C7380" }}>(optional)</span></label>
