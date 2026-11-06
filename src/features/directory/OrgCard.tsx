@@ -58,7 +58,11 @@ export default function OrgCard({ org, onConnect, isProvider = false }: Props) {
         boxShadow: cardHovered ? "0 4px 16px rgba(26,43,53,0.09)" : "none",
       }}
     >
-      {/* Main content */}
+      {/* Main content — linked to profile */}
+      <Link
+        to={`/directory/${org.slug}`}
+        style={{ textDecoration: "none", color: "inherit", flex: 1, display: "flex", flexDirection: "column" }}
+      >
       <div style={{ padding: "1.25rem", flex: 1, display: "flex", flexDirection: "column", gap: "0.625rem" }}>
 
         {/* Name + badge */}
@@ -133,6 +137,7 @@ export default function OrgCard({ org, onConnect, isProvider = false }: Props) {
           </div>
         )}
       </div>
+      </Link>
 
       {/* Divider */}
       <div style={{ height: "1px", background: "#E2E8E6", margin: "0 1.25rem" }} />
@@ -196,7 +201,7 @@ export default function OrgCard({ org, onConnect, isProvider = false }: Props) {
             )}
 
             <button
-              onClick={() => onConnect(org)}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onConnect(org); }}
               onMouseEnter={() => setBtnHovered(true)}
               onMouseLeave={() => setBtnHovered(false)}
               style={{

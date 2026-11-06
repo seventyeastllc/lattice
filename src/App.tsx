@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/context/AuthContext";
 import HomePage from "@/pages/HomePage";
 import DirectoryPage from "@/pages/DirectoryPage";
+import OrgProfilePage from "@/pages/OrgProfilePage";
 import LoginPage from "@/pages/LoginPage";
 import JoinPage from "@/pages/JoinPage";
 import DashboardPage from "@/pages/DashboardPage";
@@ -21,6 +22,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/directory" element={<DirectoryPage />} />
+            <Route path="/directory/:slug" element={<OrgProfilePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/join" element={<JoinPage />} />
             <Route

@@ -22,29 +22,47 @@ const ORG_TYPES = [
 
 const SERVICE_OPTIONS = Object.entries(SERVICE_CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
 
+const GEORGIA_REGIONS: Record<string, string[]> = {
+  "Northwest Georgia": ["Catoosa", "Chattooga", "Dade", "Floyd", "Gordon", "Murray", "Polk", "Walker", "Whitfield"],
+  "North Georgia": ["Cherokee", "Dawson", "Fannin", "Forsyth", "Gilmer", "Habersham", "Hall", "Lumpkin", "Pickens", "Rabun", "Stephens", "Towns", "Union", "White"],
+  "Metro Atlanta": ["Barrow", "Bartow", "Carroll", "Clayton", "Cobb", "Coweta", "DeKalb", "Douglas", "Fayette", "Fulton", "Gwinnett", "Henry", "Newton", "Paulding", "Rockdale", "Spalding", "Walton"],
+  "Central Georgia": ["Baldwin", "Bibb", "Crawford", "Houston", "Jones", "Monroe", "Peach", "Pulaski", "Putnam", "Twiggs", "Wilkinson"],
+  "East Georgia": ["Augusta-Richmond", "Burke", "Columbia", "Glascock", "Jefferson", "Jenkins", "Lincoln", "McDuffie", "Taliaferro", "Warren", "Washington", "Wilkes"],
+  "South Georgia": ["Ben Hill", "Berrien", "Brooks", "Coffee", "Colquitt", "Cook", "Dougherty", "Echols", "Irwin", "Lanier", "Lowndes", "Thomas", "Tift", "Turner"],
+  "Southeast Georgia": ["Appling", "Atkinson", "Bacon", "Brantley", "Bulloch", "Candler", "Charlton", "Clinch", "Emanuel", "Evans", "Jeff Davis", "Pierce", "Tattnall", "Toombs", "Ware", "Wayne"],
+};
+
 export default function DirectoryPage() {
   const { user } = useAuth();
   const isProvider = !!user;
   const { data: orgs = [], isLoading, isError } = useDirectory();
 
   const [search, setSearch]         = useState("");
+  const [region, setRegion]         = useState("all");
   const [county, setCounty]         = useState("all");
   const [orgType, setOrgType]       = useState("all");
   const [service, setService]       = useState("all");
   const [fundingOnly, setFundingOnly] = useState(false);
   const [confOnly, setConfOnly]     = useState(false);
   const [modalOrg, setModalOrg]     = useState<DirectoryOrg | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
-  // Derive county list from live data
-  const allCounties = useMemo(
-    () => Array.from(new Set(orgs.map((o) => o.county).filter(Boolean))).sort(),
-    [orgs]
-  );
+  // Derive county list from live data, optionally filtered by region
+  const allCounties = useMemo(() => {
+    const liveCounts = Array.from(new Set(orgs.map((o) => o.county).filter(Boolean))).sort();
+    if (region === "all") return liveCounts;
+    const regionCounties = GEORGIA_REGIONS[region] ?? [];
+    return liveCounts.filter((c) => regionCounties.includes(c));
+  }, [orgs, region]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return orgs.filter((org) => {
-      if (q && !org.name.toLowerCase().includes(q) && !org.description.toLowerCase().includes(q)) return false;
+      if (q && !org.name.toLowerCase().includes(q) && !org.description.toLowerCase().includes(q) && !org.services.some((s) => s.name.toLowerCase().includes(q))) return false;
+      if (region !== "all") {
+        const regionCounties = GEORGIA_REGIONS[region] ?? [];
+        if (!regionCounties.includes(org.county)) return false;
+      }
       if (county !== "all" && org.county !== county) return false;
       if (orgType !== "all" && org.org_type !== orgType) return false;
       if (service !== "all" && !org.services.some((s) => s.category === service)) return false;
@@ -52,14 +70,15 @@ export default function DirectoryPage() {
       if (confOnly && !org.contact?.accepts_case_conference) return false;
       return true;
     });
-  }, [orgs, search, county, orgType, service, fundingOnly, confOnly]);
+  }, [orgs, search, region, county, orgType, service, fundingOnly, confOnly]);
 
   const activeFilterCount = [
-    county !== "all", orgType !== "all", service !== "all", fundingOnly, confOnly,
+    region !== "all", county !== "all", orgType !== "all", service !== "all", fundingOnly, confOnly,
   ].filter(Boolean).length;
 
   function clearFilters() {
     setSearch("");
+    setRegion("all");
     setCounty("all");
     setOrgType("all");
     setService("all");
@@ -121,7 +140,26 @@ export default function DirectoryPage() {
         @media (max-width: 720px)  { .dir-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 480px)  { .dir-grid { grid-template-columns: 1fr; } }
         .dir-empty { text-align: center; padding: 4rem 1rem; color: #5C7380; grid-column: 1 / -1; }
-        @media (max-width: 720px) { .dir-filter-bar { padding: 0.875rem 1rem; top: 0; } .dir-main { padding: 1.5rem 1rem 3rem; } }
+        .dir-mobile-row { display: none; align-items: center; gap: 0.625rem; }
+        .dir-filters-btn {
+          display: inline-flex; align-items: center; gap: 0.375rem;
+          background: #ffffff; border: 1px solid #E2E8E6; color: #1A2B35;
+          font-size: 0.8125rem; font-weight: 600; padding: 0.5rem 0.875rem; cursor: pointer;
+          font-family: inherit; white-space: nowrap;
+        }
+        .dir-filters-btn .badge {
+          background: #2A9D8F; color: #fff; font-size: 0.65rem; font-weight: 800;
+          border-radius: 10px; padding: 0.1rem 0.4rem; min-width: 18px; text-align: center;
+        }
+        .dir-mobile-drawer { display: none; padding: 0.75rem 1rem 1rem; border-top: 1px solid #E2E8E6; background: #ffffff; flex-direction: column; gap: 0.625rem; }
+        .dir-mobile-drawer.open { display: flex; }
+        @media (max-width: 720px) {
+          .dir-filter-bar { padding: 0.75rem 1rem; top: 0; }
+          .dir-main { padding: 1.5rem 1rem 3rem; }
+          .dir-filter-inner { display: none; }
+          .dir-mobile-row { display: flex; }
+          .dir-search-wrap { flex: 1; max-width: none; }
+        }
       `}</style>
 
       <div className="dir-page">
@@ -144,6 +182,7 @@ export default function DirectoryPage() {
 
         {/* Sticky filter bar */}
         <div className="dir-filter-bar">
+          {/* Desktop filter row */}
           <div className="dir-filter-inner">
             <div className="dir-search-wrap">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -152,6 +191,11 @@ export default function DirectoryPage() {
               </svg>
               <input className="dir-search" type="text" placeholder="Search organizations..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+
+            <select className="dir-select" value={region} onChange={(e) => { setRegion(e.target.value); setCounty("all"); }}>
+              <option value="all">All Regions</option>
+              {Object.keys(GEORGIA_REGIONS).map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
 
             <select className="dir-select" value={county} onChange={(e) => setCounty(e.target.value)}>
               <option value="all">All Counties</option>
@@ -173,7 +217,6 @@ export default function DirectoryPage() {
                   <input type="checkbox" checked={fundingOnly} onChange={(e) => setFundingOnly(e.target.checked)} />
                   Has Funding
                 </label>
-
                 <label className="dir-toggle">
                   <input type="checkbox" checked={confOnly} onChange={(e) => setConfOnly(e.target.checked)} />
                   Case Conference
@@ -183,6 +226,58 @@ export default function DirectoryPage() {
 
             {(activeFilterCount > 0 || search) && (
               <button className="dir-clear" onClick={clearFilters}>Clear filters</button>
+            )}
+          </div>
+
+          {/* Mobile: search + Filters toggle */}
+          <div className="dir-mobile-row">
+            <div className="dir-search-wrap">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="6.5" cy="6.5" r="5.25" stroke="#5C7380" strokeWidth="1.5"/>
+                <path d="M10.5 10.5L14 14" stroke="#5C7380" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              <input className="dir-search" type="text" placeholder="Search organizations..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <button className="dir-filters-btn" onClick={() => setShowFilters((v) => !v)}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M1 3h12M3 7h8M5 11h4" stroke="#1A2B35" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              Filters
+              {activeFilterCount > 0 && <span className="badge">{activeFilterCount}</span>}
+            </button>
+            {(activeFilterCount > 0 || search) && (
+              <button className="dir-clear" onClick={clearFilters}>Clear</button>
+            )}
+          </div>
+
+          {/* Mobile drawer */}
+          <div className={`dir-mobile-drawer${showFilters ? " open" : ""}`}>
+            <select className="dir-select" value={region} onChange={(e) => { setRegion(e.target.value); setCounty("all"); }}>
+              <option value="all">All Regions</option>
+              {Object.keys(GEORGIA_REGIONS).map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select className="dir-select" value={county} onChange={(e) => setCounty(e.target.value)}>
+              <option value="all">All Counties</option>
+              {allCounties.map((c) => <option key={c} value={c}>{c} County</option>)}
+            </select>
+            <select className="dir-select" value={orgType} onChange={(e) => setOrgType(e.target.value)}>
+              {ORG_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <select className="dir-select" value={service} onChange={(e) => setService(e.target.value)}>
+              <option value="all">All Services</option>
+              {SERVICE_OPTIONS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            {isProvider && (
+              <>
+                <label className="dir-toggle">
+                  <input type="checkbox" checked={fundingOnly} onChange={(e) => setFundingOnly(e.target.checked)} />
+                  Has Funding Available
+                </label>
+                <label className="dir-toggle">
+                  <input type="checkbox" checked={confOnly} onChange={(e) => setConfOnly(e.target.checked)} />
+                  Accepts Case Conference
+                </label>
+              </>
             )}
           </div>
         </div>

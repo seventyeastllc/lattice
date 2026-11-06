@@ -12,6 +12,7 @@ interface RawOrg {
   org_type: string | null;
   county: string | null;
   has_funding_available: boolean;
+  is_verified: boolean;
   contacts: {
     id: string;
     full_name: string;
@@ -38,6 +39,7 @@ function mapOrg(raw: RawOrg): DirectoryOrg {
     county: raw.county ?? "",
     description: raw.description ?? "",
     has_funding_available: raw.has_funding_available,
+    is_verified: raw.is_verified ?? false,
     services: raw.services
       .filter((s) => s.is_active)
       .map((s) => ({ name: s.name, category: s.category ?? "" })),
@@ -63,6 +65,7 @@ function sampleToDirectoryOrg(): DirectoryOrg[] {
     county: o.county,
     description: o.description,
     has_funding_available: o.has_funding,
+    is_verified: false,
     services: o.services.map((s) => ({ name: s, category: s.toLowerCase().replace(/[^a-z]/g, "_") })),
     contact: {
       id: "sample",
@@ -87,7 +90,7 @@ export function useDirectory() {
         const { data, error } = await supabase
           .from("organizations")
           .select(
-            `id, name, slug, description, org_type, county, has_funding_available,
+            `id, name, slug, description, org_type, county, has_funding_available, is_verified,
              contacts(id, full_name, title, phone, is_primary, accepts_case_conference),
              services(name, category, is_active)`
           )

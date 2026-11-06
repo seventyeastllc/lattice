@@ -30,14 +30,20 @@ export interface DirectoryOrg {
   county: string;
   description: string;
   has_funding_available: boolean;
+  is_verified: boolean;
   services: DirectoryService[];
   contact: DirectoryContact | null;
 }
 
 // Map DB service category keys to display labels
 export const SERVICE_CATEGORY_LABELS: Record<string, string> = {
-  housing_stability: "Housing & Stability",
-  income_benefits:   "Income & Benefits",
-  health_wellness:   "Health & Wellness",
-  life_navigation:   "Life Navigation",
+  housing_stability:   "Housing & Shelter",
+  health_wellness:     "Health & Wellness",
+  food_basic_needs:    "Food & Basic Needs",
+  financial_stability: "Financial Stability",
+  safety_survivor:     "Safety & Survivor Support",
+  employment_reentry:  "Employment & Reentry",
+  // legacy keys preserved
+  income_benefits:     "Income & Benefits",
+  life_navigation:     "Life Navigation",
 };
