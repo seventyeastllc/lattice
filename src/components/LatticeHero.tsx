@@ -1,6 +1,5 @@
 import React from 'react';
 import './LatticeHero.css';
-import LatticeRibbon from './LatticeRibbon';
 
 /**
  * Pixel-directed reproduction of the APPROVED Lattice Concept 3 hero.
@@ -104,7 +103,7 @@ export default function LatticeHero(){
       <div className="lx3-header-actions"><a href="/directory" className="lx3-icon-search" aria-label="Search the directory"><Icon name="search" size={25}/></a><a className="lx3-signin" href="/login">Sign In</a><a className="lx3-join" href="/join">Join Lattice</a></div>
     </header>
     <div className="lx3-stage lattice-hero">
-      <LatticeRibbon />
+      <img src="/images/lattice-hero-ribbon.webp" className="lattice-hero-ribbon" alt="" aria-hidden="true" />
       <div className="lattice-hero-content">
         <div className="lx3-hero-copy">
           <div className="lx3-eyebrow">Visibility · Access · Coordination · Capacity</div>

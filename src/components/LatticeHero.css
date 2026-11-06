@@ -18,9 +18,9 @@
 .lx3-join{background:#00647d;color:white!important;padding-inline:25px}
 .lx3-stage{position:relative;overflow:hidden;min-height:835px;}
 .lattice-hero{position:relative;overflow:hidden;min-height:800px;}
-.lattice-ribbon{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
+.lattice-hero-ribbon{position:absolute;right:-5%;bottom:-10%;width:78%;height:auto;z-index:0;pointer-events:none;mix-blend-mode:multiply;}
 .lattice-hero-content{position:relative;z-index:2;display:grid;grid-template-columns:41% 59%;min-height:inherit}
-@media(max-width:768px){.lattice-hero{min-height:auto}.lattice-ribbon{width:160%;height:100%;left:-20%;opacity:.65}}
+@media(max-width:768px){.lattice-hero{min-height:auto}.lattice-hero-ribbon{width:120%;right:-10%;opacity:.7}}
 .lx3-hero-copy{position:relative;z-index:2;padding:87px 0 50px clamp(26px,3.55vw,60px);max-width:660px;min-width:0}
 .lx3-eyebrow{display:inline-flex;align-items:center;background:#c8e8e6;color:#123d4c;padding:10px 22px;border-radius:36px;font-size:20px;white-space:nowrap;font-weight:650;letter-spacing:-.02em;line-height:1.1}
 .lx3-hero-copy h1{font-size:clamp(54px,5.55vw,91px);letter-spacing:.01em;line-height:1.1;font-weight:780;color:#0d344a;margin:32px 0 37px;white-space:nowrap}
