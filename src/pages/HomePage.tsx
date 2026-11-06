@@ -1,5 +1,5 @@
 import NavBar from "@/components/layout/NavBar";
-import HeroSection from "@/features/home/HeroSection";
+import LatticeHero from "@/components/LatticeHero";
 import StatsCallout from "@/features/home/StatsCallout";
 import ExploreNetwork from "@/features/home/ExploreNetwork";
 import HowItWorks from "@/features/home/HowItWorks";
@@ -13,7 +13,7 @@ export default function HomePage() {
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <NavBar />
       <main style={{ flex: 1 }}>
-        <HeroSection />
+        <LatticeHero />
         <StatsCallout />
         <ExploreNetwork />
         <HowItWorks />
