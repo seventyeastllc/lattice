@@ -1,172 +1,299 @@
-const benefits = [
+import { Link } from "react-router-dom";
+
+const tiers = [
   {
-    icon: "✓",
-    title: "No PHI stored on this platform",
-    body: "Lattice holds coordination data only. Clinical records and case notes stay with the organizations that hold the service relationship.",
+    name: "Community",
+    price: "Free",
+    highlight: false,
+    features: [
+      "Listed in the verified directory",
+      "Receive facilitated connection requests",
+      "Basic organizational profile",
+      "Network email updates",
+    ],
   },
   {
-    icon: "✓",
-    title: "Verified contacts, not general inboxes",
-    body: "Every listing is maintained by the network. Named contacts, direct lines, real capacity status.",
+    name: "Partner",
+    price: "$25 / mo",
+    highlight: true,
+    foundingBadge: true,
+    features: [
+      "Everything in Community",
+      "Full member dashboard",
+      "Service listing management",
+      "Coordination request tracking",
+      "Founding member recognition",
+    ],
   },
   {
-    icon: "✓",
-    title: "Outcome-oriented by design",
-    body: "Success is measured at engagement, sustained contact, and resolution — not at the referral step.",
+    name: "Network Leader",
+    price: "$75 / mo",
+    highlight: false,
+    features: [
+      "Everything in Partner",
+      "Priority coordinator support",
+      "Early access to new features",
+      "Outcomes data access (coming soon)",
+      "Network leadership listing",
+    ],
   },
 ];
 
 export default function WhyLattice() {
   return (
-    <section id="why" style={{ background: "#1E3A4A", padding: "8rem 0" }}>
-      <div
-        style={{
-          maxWidth: 1280,
-          margin: "0 auto",
-          padding: "0 2rem",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-          gap: "5rem",
-          alignItems: "start",
-        }}
-      >
-        {/* LEFT — text */}
-        <div>
-          <p
-            style={{
-              color: "#2A9D8F",
-              fontSize: "0.7rem",
-              fontWeight: 600,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              margin: 0,
-            }}
-          >
-            Why It Works
-          </p>
+    <>
+      <style>{`
+        .membership-section {
+          background: #ffffff;
+          padding: 7rem 2rem;
+        }
+        .membership-inner {
+          max-width: 1280px;
+          margin: 0 auto;
+        }
+        .membership-top {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 4rem;
+          margin-bottom: 4rem;
+          align-items: start;
+        }
+        .membership-eyebrow {
+          color: #2A9D8F;
+          font-size: 0.7rem;
+          font-weight: 600;
+          letter-spacing: 0.25em;
+          text-transform: uppercase;
+          margin: 0 0 0.875rem;
+        }
+        .membership-h2 {
+          color: #1A2B35;
+          font-size: clamp(1.875rem, 3.5vw, 2.5rem);
+          font-weight: 800;
+          line-height: 1.15;
+          margin: 0;
+        }
+        .membership-founding {
+          border: 1px solid #E2E8E6;
+          border-left: 4px solid #E9A26B;
+          background: #FFFAF5;
+          padding: 1.5rem 1.75rem;
+          border-radius: 2px;
+        }
+        .membership-founding-label {
+          color: #C47D3B;
+          font-size: 0.675rem;
+          font-weight: 700;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          margin: 0 0 0.5rem;
+        }
+        .membership-founding-text {
+          color: #1A2B35;
+          font-size: 0.9375rem;
+          line-height: 1.7;
+          margin: 0;
+        }
+        .membership-founding-text strong {
+          color: #C47D3B;
+        }
+        .membership-stats-row {
+          display: flex;
+          gap: 2.5rem;
+          margin-top: 1.75rem;
+          flex-wrap: wrap;
+        }
+        .membership-stat-item {}
+        .membership-stat-num {
+          color: #1A2B35;
+          font-size: 2rem;
+          font-weight: 800;
+          margin: 0;
+          line-height: 1;
+          letter-spacing: -0.02em;
+        }
+        .membership-stat-label {
+          color: #5C7380;
+          font-size: 0.8rem;
+          margin: 0.3rem 0 0;
+        }
+        .tier-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.5rem;
+        }
+        .tier-card {
+          border: 1px solid #E2E8E6;
+          padding: 2rem;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          transition: box-shadow 0.2s;
+        }
+        .tier-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
+        .tier-card.highlighted {
+          border-color: #2A9D8F;
+          border-top: 3px solid #2A9D8F;
+        }
+        .tier-founding-badge {
+          position: absolute;
+          top: -1px;
+          right: 1.5rem;
+          background: #E9A26B;
+          color: #ffffff;
+          font-size: 0.625rem;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          padding: 0.3rem 0.75rem;
+          border-radius: 0 0 4px 4px;
+        }
+        .tier-name {
+          color: #1A2B35;
+          font-size: 1.0625rem;
+          font-weight: 800;
+          margin: 0 0 0.375rem;
+        }
+        .tier-price {
+          color: #2A9D8F;
+          font-size: 1.5rem;
+          font-weight: 800;
+          margin: 0 0 1.25rem;
+          letter-spacing: -0.02em;
+        }
+        .tier-price.free {
+          color: #1A2B35;
+        }
+        .tier-divider {
+          border: none;
+          border-top: 1px solid #E2E8E6;
+          margin: 0 0 1.25rem;
+        }
+        .tier-features {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          flex: 1;
+        }
+        .tier-features li {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          color: #374151;
+          font-size: 0.875rem;
+          line-height: 1.55;
+        }
+        .tier-check {
+          width: 16px;
+          height: 16px;
+          background: rgba(42,157,143,0.12);
+          border-radius: 50%;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-top: 1px;
+        }
+        .tier-cta {
+          margin-top: 2rem;
+          display: block;
+          text-align: center;
+          padding: 0.875rem;
+          font-size: 0.9375rem;
+          font-weight: 700;
+          text-decoration: none;
+          border-radius: 2px;
+          border: 1.5px solid #1E3A4A;
+          color: #1E3A4A;
+          background: transparent;
+          transition: background 0.15s, color 0.15s;
+        }
+        .tier-cta:hover {
+          background: #1E3A4A;
+          color: #ffffff;
+        }
+        .tier-cta.primary {
+          background: #2A9D8F;
+          border-color: #2A9D8F;
+          color: #ffffff;
+        }
+        .tier-cta.primary:hover { background: #248a7d; border-color: #248a7d; }
+        @media (max-width: 1000px) {
+          .membership-top { grid-template-columns: 1fr; gap: 2rem; }
+          .tier-grid { grid-template-columns: 1fr; gap: 1rem; }
+          .membership-section { padding: 5rem 1.25rem; }
+        }
+      `}</style>
 
-          <h2
-            style={{
-              color: "#ffffff",
-              fontSize: "clamp(1.875rem, 3.5vw, 2.75rem)",
-              fontWeight: 800,
-              lineHeight: 1.2,
-              marginTop: "1rem",
-              marginBottom: 0,
-            }}
-          >
-            The referral was made.
-            <br />
-            So why didn't they
-            <br />
-            get there?
-          </h2>
-
-          <p
-            style={{
-              color: "rgba(255,255,255,0.70)",
-              fontSize: "1rem",
-              lineHeight: 1.9,
-              marginTop: "1.5rem",
-              marginBottom: 0,
-            }}
-          >
-            Most coordination tools stop at the referral. They log it, timestamp it,
-            and move on. Lattice doesn't. Every connection request is triaged by a
-            live coordinator. Every pathway is tracked. And the measure of success
-            isn't whether the referral was sent — it's whether the person's situation
-            actually changed.
-          </p>
-
-          <p
-            style={{
-              color: "rgba(255,255,255,0.70)",
-              fontSize: "1rem",
-              lineHeight: 1.9,
-              marginTop: "1.25rem",
-              marginBottom: 0,
-            }}
-          >
-            Lattice holds demographics, partnerships, and coordination capacity — not
-            clinical records, not HMIS data, not case notes. Your clients' information
-            stays where it belongs: with you.
-          </p>
-
-          <a
-            href="#about"
-            style={{
-              color: "#2A9D8F",
-              fontSize: "0.9375rem",
-              fontWeight: 600,
-              textDecoration: "none",
-              display: "inline-block",
-              marginTop: "2.5rem",
-              transition: "text-decoration 0.15s",
-            }}
-            onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLElement).style.textDecoration = "underline")
-            }
-            onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLElement).style.textDecoration = "none")
-            }
-          >
-            See how Lattice works →
-          </a>
-        </div>
-
-        {/* RIGHT — benefit blocks */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-          {benefits.map((b) => (
-            <div
-              key={b.title}
-              style={{ display: "flex", alignItems: "flex-start", gap: "1.25rem" }}
-            >
-              {/* Icon square */}
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  background: "rgba(42,157,143,0.12)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  color: "#2A9D8F",
-                  fontSize: "1.1rem",
-                  fontWeight: 700,
-                }}
-              >
-                {b.icon}
-              </div>
-
-              {/* Text */}
-              <div>
-                <p
-                  style={{
-                    color: "#ffffff",
-                    fontSize: "1rem",
-                    fontWeight: 700,
-                    margin: 0,
-                  }}
-                >
-                  {b.title}
-                </p>
-                <p
-                  style={{
-                    color: "rgba(255,255,255,0.60)",
-                    fontSize: "0.9rem",
-                    lineHeight: 1.7,
-                    marginTop: "0.4rem",
-                    marginBottom: 0,
-                  }}
-                >
-                  {b.body}
-                </p>
+      <section className="membership-section" id="why">
+        <div className="membership-inner">
+          <div className="membership-top">
+            <div>
+              <p className="membership-eyebrow">Membership</p>
+              <h2 className="membership-h2">Join the network that keeps coordination moving.</h2>
+              <div className="membership-stats-row">
+                <div className="membership-stat-item">
+                  <p className="membership-stat-num">800+</p>
+                  <p className="membership-stat-label">Providers in the network</p>
+                </div>
+                <div className="membership-stat-item">
+                  <p className="membership-stat-num">15</p>
+                  <p className="membership-stat-label">Counties covered</p>
+                </div>
+                <div className="membership-stat-item">
+                  <p className="membership-stat-num">Live</p>
+                  <p className="membership-stat-label">Platform status</p>
+                </div>
               </div>
             </div>
-          ))}
+
+            <div className="membership-founding">
+              <p className="membership-founding-label">Founding Member Window</p>
+              <p className="membership-founding-text">
+                Lattice is newly launched and the founding member window is open.
+                Organizations that join now will be listed with a{" "}
+                <strong>Founding Member</strong> badge and get permanent recognition
+                as early builders of this network. Pricing is locked for founding
+                members as long as the membership remains active.
+              </p>
+            </div>
+          </div>
+
+          <div className="tier-grid">
+            {tiers.map((t) => (
+              <div key={t.name} className={`tier-card${t.highlight ? " highlighted" : ""}`}>
+                {t.foundingBadge && (
+                  <span className="tier-founding-badge">Founding Member</span>
+                )}
+                <p className="tier-name">{t.name}</p>
+                <p className={`tier-price${t.price === "Free" ? " free" : ""}`}>{t.price}</p>
+                <hr className="tier-divider" />
+                <ul className="tier-features">
+                  {t.features.map((f) => (
+                    <li key={f}>
+                      <span className="tier-check">
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <path d="M1.5 4L3.5 6L6.5 2.5" stroke="#2A9D8F" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/join"
+                  className={`tier-cta${t.highlight ? " primary" : ""}`}
+                >
+                  {t.price === "Free" ? "Join for Free" : "Apply to Join"}
+                </Link>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
