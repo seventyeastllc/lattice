@@ -148,7 +148,7 @@ export default function HeroSection() {
       `}</style>
 
       <section className="hero-section">
-        <p className="hero-eyebrow">Coordination Network · Northwest Georgia</p>
+        <p className="hero-eyebrow">Visibility · Access · Coordination · Capacity</p>
 
         <h1 className="hero-headline">
           Connected<br />
@@ -156,10 +156,10 @@ export default function HeroSection() {
         </h1>
 
         <p className="hero-sub">
-          Lattice is the governed coordination network for Northwest Georgia —
-          a verified directory of named contacts across nonprofits, faith
-          communities, schools, and healthcare providers, ready to coordinate
-          around the people you serve.
+          The coordination platform for Georgia's community support network.
+          One place to discover resources, navigate eligibility, access practical
+          tools, and strengthen connections among the organizations supporting
+          individuals and families.
         </p>
 
         {/* Decorative search bar — not functional, signals intent */}
@@ -167,14 +167,14 @@ export default function HeroSection() {
           <input readOnly placeholder="Search the network — housing, food, medical..." tabIndex={-1} />
           <button tabIndex={-1}>Search</button>
         </div>
-        <p className="hero-search-label">800+ verified providers across 15 counties</p>
+        <p className="hero-search-label">800+ organizations mapped across Georgia</p>
 
         <div className="hero-ctas">
           <Link to="/directory" className="hero-cta-primary">
             Explore the Network
           </Link>
           <button className="hero-cta-secondary" onClick={() => navigate("/join")}>
-            Join as a Member
+            Join the Network
           </button>
         </div>
 

@@ -10,7 +10,7 @@ const audience = [
     ),
     role: "Case Managers",
     tagline: "Close the loop on every referral.",
-    body: "Lattice gives you verified contacts, real capacity status, and a TSE coordinator who tracks every pathway — so the connection you make actually lands.",
+    body: "Lattice gives you searchable resource profiles, eligibility guidance, and a structured pathway to request professional introductions — so your referrals are informed before you make them.",
     cta: "Explore the directory",
     href: "/directory",
   },
@@ -23,7 +23,7 @@ const audience = [
     ),
     role: "Faith-Based Organizations",
     tagline: "Stay rooted. Stay connected.",
-    body: "Lattice helps faith communities stay focused on what they do best while building stronger bridges to providers who can fill the gaps — and direct people to your ministry when it's the right fit.",
+    body: "Lattice helps faith communities stay focused on what they do best while making it easier to find service partners, understand what they offer, and ensure the people you serve know where to turn.",
     cta: "Join the network",
     href: "/join",
   },
@@ -49,7 +49,7 @@ const audience = [
     ),
     role: "Community Providers",
     tagline: "Get visible. Get referred.",
-    body: "If your work helps people move toward stability, your organization belongs here. Lattice makes community providers easier to find, verify, and coordinate with across all systems of care.",
+    body: "If your work helps people move toward stability, your organization belongs here. Lattice makes community providers easier to find, understand, and coordinate with — so the professionals in your area know you exist.",
     cta: "List your organization",
     href: "/join",
   },
@@ -163,8 +163,8 @@ export default function WhoThisIsFor() {
           <p className="who-eyebrow">Who Lattice Serves</p>
           <h2 className="who-h2">The right network for the right people.</h2>
           <p className="who-sub">
-            Lattice is built for the practitioners, ministries, schools, and
-            providers who coordinate care across Northwest Georgia every day.
+            Lattice is built for the professionals, organizations, and communities
+            working to connect people with the support they need across Georgia.
           </p>
 
           <div className="who-grid">

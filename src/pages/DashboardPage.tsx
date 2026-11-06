@@ -146,7 +146,7 @@ export default function DashboardPage() {
   const quickLinks = [
     {
       label: "Partner Directory",
-      description: "Search and filter vetted organizations by service area.",
+      description: "Search and filter organizations across Georgia's community support network.",
       href: "/directory",
       icon: "🗂️",
     },
@@ -238,7 +238,7 @@ export default function DashboardPage() {
           <div>
             <p style={{ fontWeight: 600, color: TEXT, margin: 0, fontSize: "0.9375rem" }}>Your account is active</p>
             <p style={{ color: MUTED, margin: "0.2rem 0 0", fontSize: "0.875rem" }}>
-              You have access to the full Lattice partner directory. Connection requests are reviewed by TSE coordinators.
+              You have access to the full Lattice partner directory. Connection requests are facilitated through The Seed Exchange.
             </p>
           </div>
         </div>

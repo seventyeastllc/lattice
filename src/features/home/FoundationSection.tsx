@@ -153,12 +153,13 @@ export default function FoundationSection() {
       <section className="foundation-section">
         <div className="foundation-inner">
           <div>
-            <p className="foundation-eyebrow">Ready to Coordinate</p>
-            <h2 className="foundation-h2">Your network is waiting.<br />Join it today.</h2>
+            <p className="foundation-eyebrow">Built by The Seed Exchange</p>
+            <h2 className="foundation-h2">Built from proximity.<br />Grounded in experience.</h2>
             <p className="foundation-body">
-              Lattice is live and accepting member organizations across Northwest Georgia.
-              Whether you're a case manager looking for verified partners, a faith community
-              wanting to serve better, or a provider ready to be found — your place is here.
+              Lattice was created with a belief that stronger community support starts with
+              better visibility, clearer access, and more intentional coordination. Whether
+              you're a professional looking for resource partners, an organization ready to
+              be found, or a leader building a more connected system — your place is here.
             </p>
             <div className="foundation-ctas">
               <Link to="/join" className="foundation-cta-primary">
@@ -174,10 +175,10 @@ export default function FoundationSection() {
             <p className="foundation-tse-label">Powered By</p>
             <p className="foundation-tse-name">The Seed Exchange</p>
             <p className="foundation-tse-body">
-              Lattice is an initiative of The Seed Exchange (TSE), a Northwest Georgia nonprofit
-              dedicated to strengthening coordination across human services. TSE coordinators
-              manage every connection, maintain network standards, and keep this platform
-              grounded in what actually helps people.
+              Lattice is an initiative of The Seed Exchange (TSE), a Georgia nonprofit
+              dedicated to strengthening coordination across community support systems.
+              TSE facilitates connections, supports network standards, and keeps this
+              platform grounded in the operational realities of human services work.
             </p>
             <a
               href="https://seedexchange.org"
@@ -194,7 +195,7 @@ export default function FoundationSection() {
 
         <div className="foundation-footer-row">
           <p className="foundation-footer-copy">
-            © {new Date().getFullYear()} The Seed Exchange · Lattice Coordination Network · Northwest Georgia
+            © {new Date().getFullYear()} The Seed Exchange · Lattice Coordination Network · Georgia
           </p>
           <div className="foundation-footer-links">
             <Link to="/directory" className="foundation-footer-link">Directory</Link>

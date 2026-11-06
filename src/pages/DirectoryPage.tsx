@@ -178,7 +178,7 @@ export default function DirectoryPage() {
               Partner Directory
             </h1>
             <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "1rem", lineHeight: 1.7, margin: 0, maxWidth: 620 }}>
-              A verified network of named contacts across nonprofits, faith communities, schools, and healthcare providers — ready to coordinate around the people you serve.
+              Discover organizations across Georgia's community support network — searchable by service, county, and type. Contact details and connection requests are available to network members.
             </p>
           </div>
         </div>

@@ -188,15 +188,15 @@ export default function ProductExperienceSection() {
             <p className="product-eyebrow">Product Experience</p>
             <h2 className="product-h2">What a Lattice listing looks like.</h2>
             <p className="product-sub">
-              Every verified member gets a full profile: named contact, service
-              categories, county coverage, and current capacity — maintained by
-              the network and visible to member organizations.
+              Every listing is a navigable profile: service categories, county
+              coverage, eligibility guidance, and access pathway details — built
+              to help professionals make informed referrals before reaching out.
             </p>
             <ul className="product-bullets">
               <li>Named point of contact, not a general inbox</li>
-              <li>Current service availability updated by the org</li>
               <li>Service categories tied to real coordination needs</li>
-              <li>Direct connection request pathway through TSE</li>
+              <li>Eligibility and documentation requirements at a glance</li>
+              <li>Structured connection request pathway for network members</li>
             </ul>
           </div>
 

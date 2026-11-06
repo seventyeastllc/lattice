@@ -272,7 +272,7 @@ function ClaimSearchStep({ onClaim, onNew }: {
         Is your organization already in our records?
       </h2>
       <p style={{ color: MUTED, fontSize: "0.9375rem", margin: "0 0 1.75rem", lineHeight: 1.6 }}>
-        We've pre-loaded information on nearly 1,000 organizations across northwest Georgia. Search by name, county, or contact email — if we find you, we'll pre-fill your application so you don't start from scratch.
+        We've pre-loaded information on organizations from across Georgia. Search by name, county, or contact email — if we find you, we'll pre-fill your application so you don't start from scratch.
       </p>
 
       {/* Search input */}

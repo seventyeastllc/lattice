@@ -1,6 +1,6 @@
 const stats = [
   { number: "800+", label: "Resource Providers Mapped" },
-  { number: "15",   label: "Counties in Northwest Georgia" },
+  { number: "15",   label: "Counties Currently Represented" },
   { number: "8+",   label: "Service Categories" },
   { number: "Live", label: "Network Is Open" },
 ];

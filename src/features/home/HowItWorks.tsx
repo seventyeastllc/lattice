@@ -2,26 +2,26 @@ const pillars = [
   {
     badge: "Live",
     badgeColor: "#2A9D8F",
-    title: "Verified Directory",
-    body: "Every listing includes a named contact, current service availability, and coverage area — maintained by the network, not scraped from outdated websites.",
+    title: "Resource Visibility",
+    body: "Discover organizations across Georgia's community support network — searchable by service, county, and type, with profiles that go beyond a name and phone number.",
   },
   {
     badge: "Live",
     badgeColor: "#2A9D8F",
-    title: "Facilitated Connections",
-    body: "Connection requests are triaged by a live TSE coordinator before reaching a partner — no cold calls, no dropped referrals, no unanswered inboxes.",
+    title: "Access Navigation",
+    body: "Understand eligibility requirements, documentation needs, and intake processes before making a connection — so the people you serve are prepared when they arrive.",
   },
   {
     badge: "Live",
     badgeColor: "#2A9D8F",
-    title: "Human-in-the-Loop",
-    body: "Every pathway is tracked by a coordinator. The measure of success isn't whether the referral was sent — it's whether the person's situation actually changed.",
+    title: "Professional Coordination",
+    body: "Request introductions through a structured pathway. TSE facilitates the connection, so outreach reaches the right person at the right organization.",
   },
   {
     badge: "Coming Soon",
     badgeColor: "#E9A26B",
-    title: "Outcomes Tracking",
-    body: "Dashboard-level visibility into connection outcomes, referral velocity, and coordination patterns across the network — in development.",
+    title: "Organizational Capacity",
+    body: "Dashboard-level visibility into connection outcomes, referral patterns, and coordination activity across the network — in development.",
   },
 ];
 
@@ -124,10 +124,10 @@ export default function HowItWorks() {
       <section className="how-section">
         <div className="how-inner">
           <p className="how-eyebrow">The Lattice Approach</p>
-          <h2 className="how-h2">Built for coordination that actually works.</h2>
+          <h2 className="how-h2">More than a directory. A connected way of working.</h2>
           <p className="how-sub">
-            Four pillars that separate Lattice from outdated resource lists
-            and referral-and-forget software.
+            Four pillars designed to improve how professionals discover resources,
+            navigate eligibility, coordinate with partners, and build organizational capacity.
           </p>
 
           <div className="how-grid">
