@@ -4,9 +4,17 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { UserRole } from "@/types";
 
-// Dev bypass: append ?demo=1 to any URL to access the site as a logged-in admin
-function isDemoMode() {
-  return new URLSearchParams(window.location.search).get("demo") === "1";
+const DEMO_SESSION_KEY = "lattice_demo_role";
+export type DemoRole = "public" | "member" | "admin";
+
+function initDemoRole(): DemoRole | null {
+  if (new URLSearchParams(window.location.search).get("demo") === "1") {
+    const saved = sessionStorage.getItem(DEMO_SESSION_KEY) as DemoRole | null;
+    const role: DemoRole = saved ?? "admin";
+    sessionStorage.setItem(DEMO_SESSION_KEY, role);
+    return role;
+  }
+  return sessionStorage.getItem(DEMO_SESSION_KEY) as DemoRole | null;
 }
 
 const DEMO_USER = {
@@ -22,6 +30,8 @@ interface AuthContextValue {
   user: User | null;
   role: UserRole | null;
   loading: boolean;
+  demoRole: DemoRole | null;
+  setDemoRole: (r: DemoRole) => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
@@ -29,11 +39,23 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const demo = isDemoMode();
+  const [demoRole, setDemoRoleState] = useState<DemoRole | null>(initDemoRole);
+  const demo = demoRole !== null;
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(demo ? DEMO_USER : null);
-  const [role, setRole] = useState<UserRole | null>(demo ? "admin" : null);
+  const [user, setUser] = useState<User | null>(
+    demo && demoRole !== "public" ? DEMO_USER : null
+  );
+  const [role, setRole] = useState<UserRole | null>(
+    demoRole === "admin" ? "admin" : demoRole === "member" ? "member" : null
+  );
   const [loading, setLoading] = useState(!demo);
+
+  function setDemoRole(r: DemoRole) {
+    sessionStorage.setItem(DEMO_SESSION_KEY, r);
+    setDemoRoleState(r);
+    setUser(r !== "public" ? DEMO_USER : null);
+    setRole(r === "admin" ? "admin" : r === "member" ? "member" : null);
+  }
 
   async function fetchRole(userId: string) {
     const { data } = await supabase
@@ -82,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, role, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, loading, demoRole, setDemoRole, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
