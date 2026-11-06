@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import type { UserRole } from "@/types";
 
 const TEAL = "#2A9D8F";
-const DARK = "#1E3A4A";
+const DARK = "#102D3B";
 const TEXT = "#1A2B35";
 const MUTED = "#5C7380";
 const BORDER = "#E2E8E6";
@@ -24,21 +24,13 @@ export default function NavBar() {
     return location.pathname === path || location.pathname.startsWith(path + "/");
   }
 
-  const memberLinks = [
-    { label: "My Workspace",      to: "/dashboard" },
-    { label: "My Resources",      to: "/resources" },
-    { label: "Tools & Knowledge", to: "/knowledge" },
-    { label: "My Network",        to: "/network" },
+  const navLinks = [
+    { label: "Directory",   to: "/directory",  router: true },
+    { label: "Tools",       to: "/knowledge",  router: true },
+    { label: "Membership",  to: "/join",        router: true },
+    { label: "Resources",   to: "/resources",   router: true },
+    { label: "About",       to: "/#why",        router: false },
   ];
-
-  const anonLinks = [
-    { label: "Directory",        to: "/directory",  router: true },
-    { label: "About",            to: "/#why",       router: false },
-    { label: "Join the Network", to: "/join",        router: true },
-  ];
-
-  const activeLinkStyle = { color: TEAL, fontWeight: 700 };
-  const inactiveLinkStyle = { color: TEXT, fontWeight: 500 };
 
   return (
     <header
@@ -46,9 +38,7 @@ export default function NavBar() {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: "rgba(255,255,255,0.96)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        background: "#ffffff",
         borderBottom: `1px solid ${BORDER}`,
       }}
     >
@@ -57,29 +47,32 @@ export default function NavBar() {
           maxWidth: 1280,
           margin: "0 auto",
           padding: "0 2rem",
-          height: 112,
+          height: 64,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
         {/* Logo */}
-        <Link to="/" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-          <img
-            src="/Lattice%20Icon%203%20trans.png"
-            alt="Lattice"
-            style={{ height: 100, width: "auto", display: "block", mixBlendMode: "multiply" }}
-          />
+        <Link to="/" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, textDecoration: "none" }}>
+          <img src="/Lattice-icon-transparent.png" alt="" style={{ height: 32, width: 32, objectFit: "contain" }} />
+          <img src="/Lattice-wordmark-transparent.png" alt="Lattice" style={{ height: 28, objectFit: "contain" }} />
         </Link>
 
         {/* Desktop nav */}
-        <nav style={{ display: "flex", alignItems: "center", gap: "2rem" }} className="lattice-desktop-nav">
-          {anonLinks.map(({ label, to, router }) =>
+        <nav style={{ display: "flex", alignItems: "center", gap: "1.75rem" }} className="lattice-desktop-nav">
+          {navLinks.map(({ label, to, router }) =>
             router ? (
               <Link
                 key={label}
                 to={to}
-                style={{ ...(isActive(to) ? activeLinkStyle : inactiveLinkStyle), fontSize: "0.9rem", textDecoration: "none", transition: "opacity 0.15s" }}
+                style={{
+                  color: isActive(to) ? TEAL : MUTED,
+                  fontWeight: isActive(to) ? 600 : 500,
+                  fontSize: "0.875rem",
+                  textDecoration: "none",
+                  transition: "color 0.15s",
+                }}
               >
                 {label}
               </Link>
@@ -87,79 +80,108 @@ export default function NavBar() {
               <a
                 key={label}
                 href={to}
-                style={{ color: TEXT, fontSize: "0.9rem", fontWeight: 500, textDecoration: "none", transition: "opacity 0.15s" }}
+                style={{ color: MUTED, fontSize: "0.875rem", fontWeight: 500, textDecoration: "none" }}
               >
                 {label}
               </a>
             )
           )}
 
-          {user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              {(role as UserRole) === "admin" && (
+          {/* Right-side actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginLeft: "0.5rem" }}>
+            {/* Search icon */}
+            <button
+              aria-label="Search"
+              style={{ background: "none", border: "none", cursor: "pointer", color: MUTED, display: "flex", alignItems: "center", padding: "0.25rem" }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M12.5 12.5L16 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+
+            {user ? (
+              <>
+                {(role as UserRole) === "admin" && (
+                  <Link
+                    to="/admin"
+                    style={{
+                      background: DARK,
+                      color: "#fff",
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                      padding: "0.4rem 0.9rem",
+                      borderRadius: "24px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Admin
+                  </Link>
+                )}
                 <Link
-                  to="/admin"
+                  to="/dashboard"
+                  style={{
+                    background: TEAL,
+                    color: "#ffffff",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    padding: "0.45rem 1.25rem",
+                    borderRadius: "24px",
+                    textDecoration: "none",
+                  }}
+                >
+                  My Workspace
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  style={{
+                    background: "transparent",
+                    border: `1.5px solid ${BORDER}`,
+                    color: MUTED,
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    padding: "0.4rem 1rem",
+                    borderRadius: "24px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  style={{
+                    background: "transparent",
+                    border: `1.5px solid ${DARK}`,
+                    color: DARK,
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    padding: "0.45rem 1.25rem",
+                    borderRadius: "24px",
+                    textDecoration: "none",
+                  }}
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/join"
                   style={{
                     background: DARK,
-                    color: "#fff",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    padding: "0.4rem 0.9rem",
-                    borderRadius: "6px",
-                    textDecoration: "none",
-                    letterSpacing: "0.01em",
-                  }}
-                >
-                  Admin
-                </Link>
-              )}
-              {memberLinks.map(({ label, to }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  style={{
-                    ...(isActive(to) ? activeLinkStyle : { color: TEXT, fontWeight: 500 }),
+                    color: "#ffffff",
                     fontSize: "0.875rem",
+                    fontWeight: 600,
+                    padding: "0.45rem 1.25rem",
+                    borderRadius: "24px",
                     textDecoration: "none",
                   }}
                 >
-                  {label}
+                  Join Lattice
                 </Link>
-              ))}
-              <button
-                onClick={handleSignOut}
-                style={{
-                  background: "transparent",
-                  border: `1.5px solid ${BORDER}`,
-                  color: MUTED,
-                  fontSize: "0.875rem",
-                  fontWeight: 500,
-                  padding: "0.45rem 1.1rem",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <Link
-              to="/login"
-              style={{
-                background: DARK,
-                color: "#ffffff",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-                padding: "0.5rem 1.5rem",
-                textDecoration: "none",
-                display: "inline-block",
-                borderRadius: "8px",
-                transition: "opacity 0.15s",
-              }}
-            >
-              Sign In
-            </Link>
-          )}
+              </>
+            )}
+          </div>
         </nav>
 
         {/* Mobile hamburger */}
@@ -201,13 +223,13 @@ export default function NavBar() {
             background: "#fff",
           }}
         >
-          {anonLinks.map(({ label, to, router }) =>
+          {navLinks.map(({ label, to, router }) =>
             router ? (
               <Link
                 key={label}
                 to={to}
                 onClick={() => setMobileOpen(false)}
-                style={{ padding: "0.6rem 0", fontSize: "0.95rem", textDecoration: "none", ...(isActive(to) ? activeLinkStyle : { color: TEXT, fontWeight: 500 }) }}
+                style={{ padding: "0.6rem 0", fontSize: "0.95rem", textDecoration: "none", color: isActive(to) ? TEAL : TEXT, fontWeight: isActive(to) ? 600 : 500 }}
               >
                 {label}
               </Link>
@@ -223,51 +245,56 @@ export default function NavBar() {
             )
           )}
 
-          {user && (
-            <>
-              <hr style={{ border: "none", borderTop: `1px solid ${BORDER}`, margin: "0.5rem 0" }} />
-              {(role as UserRole) === "admin" && (
+          <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {user ? (
+              <>
+                {(role as UserRole) === "admin" && (
+                  <Link
+                    to="/admin"
+                    onClick={() => setMobileOpen(false)}
+                    style={{ background: DARK, color: "#fff", textAlign: "center", padding: "0.75rem", borderRadius: "24px", textDecoration: "none", fontWeight: 700, fontSize: "0.95rem" }}
+                  >
+                    Admin
+                  </Link>
+                )}
                 <Link
-                  to="/admin"
+                  to="/dashboard"
                   onClick={() => setMobileOpen(false)}
-                  style={{ padding: "0.6rem 0", fontSize: "0.95rem", fontWeight: 700, color: DARK, textDecoration: "none" }}
+                  style={{ background: TEAL, color: "#fff", textAlign: "center", padding: "0.75rem", borderRadius: "24px", textDecoration: "none", fontWeight: 700, fontSize: "0.95rem" }}
                 >
-                  Admin
+                  My Workspace
                 </Link>
-              )}
-              {memberLinks.map(({ label, to }) => (
+                <button
+                  onClick={() => { setMobileOpen(false); handleSignOut(); }}
+                  style={{ padding: "0.6rem 0", fontSize: "0.95rem", fontWeight: 500, color: MUTED, background: "none", border: "none", textAlign: "left", cursor: "pointer" }}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
                 <Link
-                  key={to}
-                  to={to}
+                  to="/login"
                   onClick={() => setMobileOpen(false)}
-                  style={{ padding: "0.6rem 0", fontSize: "0.95rem", textDecoration: "none", ...(isActive(to) ? activeLinkStyle : { color: TEXT, fontWeight: 500 }) }}
+                  style={{ display: "block", border: `1.5px solid ${DARK}`, color: DARK, textAlign: "center", padding: "0.75rem", borderRadius: "24px", textDecoration: "none", fontWeight: 700, fontSize: "0.95rem" }}
                 >
-                  {label}
+                  Sign In
                 </Link>
-              ))}
-              <button
-                onClick={() => { setMobileOpen(false); handleSignOut(); }}
-                style={{ padding: "0.6rem 0", fontSize: "0.95rem", fontWeight: 500, color: MUTED, background: "none", border: "none", textAlign: "left", cursor: "pointer" }}
-              >
-                Sign out
-              </button>
-            </>
-          )}
-
-          {!user && (
-            <Link
-              to="/login"
-              onClick={() => setMobileOpen(false)}
-              style={{ marginTop: "0.5rem", display: "block", background: DARK, color: "#fff", textAlign: "center", padding: "0.75rem", borderRadius: "8px", textDecoration: "none", fontWeight: 700, fontSize: "0.95rem" }}
-            >
-              Sign In
-            </Link>
-          )}
+                <Link
+                  to="/join"
+                  onClick={() => setMobileOpen(false)}
+                  style={{ display: "block", background: DARK, color: "#fff", textAlign: "center", padding: "0.75rem", borderRadius: "24px", textDecoration: "none", fontWeight: 700, fontSize: "0.95rem" }}
+                >
+                  Join Lattice
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       )}
 
       <style>{`
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
           .lattice-desktop-nav { display: none !important; }
           .lattice-mobile-menu-btn { display: flex !important; }
           .lattice-mobile-drawer { display: flex !important; }
