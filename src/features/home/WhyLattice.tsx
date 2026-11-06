@@ -18,7 +18,7 @@ const benefits = [
 
 export default function WhyLattice() {
   return (
-    <section style={{ background: "#1E3A4A", padding: "8rem 0" }}>
+    <section id="why" style={{ background: "#1E3A4A", padding: "8rem 0" }}>
       <div
         style={{
           maxWidth: 1280,

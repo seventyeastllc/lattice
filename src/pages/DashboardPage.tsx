@@ -20,6 +20,7 @@ const ORG_TYPE_LABELS: Record<string, string> = {
   medical:     "Medical / Health",
   housing:     "Housing",
   government:  "Government",
+  community:   "Community Org",
   other:       "Other",
 };
 

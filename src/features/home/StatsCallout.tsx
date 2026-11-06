@@ -1,8 +1,8 @@
 const stats = [
-  { number: "47", label: "Partner Organizations" },
-  { number: "12", label: "Counties Served" },
-  { number: "4", label: "Service Categories" },
-  { number: "Fall 2026", label: "Platform Launch" },
+  { number: "800+", label: "Resource Providers Mapped" },
+  { number: "15", label: "Counties in Northwest Georgia" },
+  { number: "8+", label: "Service Categories" },
+  { number: "Now Live", label: "Join the Network Today" },
 ];
 
 export default function StatsCallout() {

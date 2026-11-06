@@ -17,6 +17,7 @@ const ORG_TYPES = [
   { value: "medical",    label: "Medical / Health" },
   { value: "housing",    label: "Housing" },
   { value: "government", label: "Government" },
+  { value: "community",  label: "Community Org" },
 ];
 
 const SERVICE_OPTIONS = Object.entries(SERVICE_CATEGORY_LABELS).map(([value, label]) => ({ value, label }));

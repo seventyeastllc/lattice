@@ -861,12 +861,4 @@ Emergency Fund for Fathers and Families, Fallen Fathers Fund, Young Fathers Scho
   ('TSE-0754', 'Georgia Council for Recovery', NULL, '4465-4473_001.pdf scan 10/23/2026', NULL, 'Atlanta', 'GA', NULL, 'Fulton', NULL, '404-587-6016', NULL, NULL, 'gasubstanceabuse.org', NULL, 'Recovery/Substance Abuse', 'Advocacy/Coalition', 'recovery,substance abuse,peer support,statewide', 'Adults', NULL, '10/27/2026', 'Unknown', 'Needs Verification', 'Unverified', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '58-2045112', 'unclaimed', FALSE),
   ('TSE-0755', 'Five Loaves & Two Fish Emergency Shelter', NULL, '4465-4473_001.pdf scan 10/23/2026', '412 W. Slaton Avenue', 'Griffin', 'GA', '30223', 'Spalding', NULL, '678-688-8466', NULL, NULL, 'https://www.griffinfoodpantry.org/', NULL, 'Emergency Shelter', 'General Shelter', 'shelter,homeless,Spalding,Griffin', 'Adults,Families', NULL, '10/27/2026', 'Unknown', 'Needs Verification', 'Unverified', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ProPublica match: Five Loaves & Two Fish Food Pantry Inc (EIN 27-3276308, score 0.87)', '27-3276308', 'unclaimed', FALSE),
   ('TSE-0756', 'Veteran''s Empowerment Organization of Georgia', 'VEO', '4465-4473_001.pdf scan 10/23/2026', NULL, 'Atlanta', 'GA', NULL, 'Fulton', NULL, '404-889-8710', NULL, NULL, 'https://www.veohero.org/', NULL, 'Veterans', 'Veteran Support', 'veterans,homeless,housing,donations,Atlanta', 'Veterans', NULL, '10/27/2026', 'Unknown', 'Needs Verification', 'Unverified', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ProPublica match: Veterans Empowerment Organization Of Georgia Inc (EIN 80-0219022, score 0.70)', '80-0219022', 'unclaimed', FALSE)
-ON CONFLICT (record_id) DO UPDATE SET
-  org_name           = EXCLUDED.org_name,
-  county             = EXCLUDED.county,
-  email              = EXCLUDED.email,
-  main_phone         = EXCLUDED.main_phone,
-  partnership_status = EXCLUDED.partnership_status,
-  follow_up_notes    = EXCLUDED.follow_up_notes,
-  primary_category   = EXCLUDED.primary_category,
-  service_tags       = EXCLUDED.service_tags;
+ON CONFLICT (record_id) DO NOTHING;

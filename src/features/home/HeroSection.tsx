@@ -1,8 +1,9 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const DOT_TEXTURE = `radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)`;
 
 export default function HeroSection() {
+  const navigate = useNavigate();
   return (
     <>
       <style>{`
@@ -187,8 +188,8 @@ export default function HeroSection() {
               >
                 Browse the Directory
               </Link>
-              <a
-                href="#join"
+              <button
+                onClick={() => navigate("/join")}
                 style={{
                   background: "transparent",
                   color: "#ffffff",
@@ -198,6 +199,8 @@ export default function HeroSection() {
                   border: "1px solid rgba(255,255,255,0.4)",
                   textDecoration: "none",
                   display: "inline-block",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
                   transition: "border-color 0.15s",
                 }}
                 onMouseEnter={(e) =>
@@ -209,7 +212,7 @@ export default function HeroSection() {
                 }
               >
                 Join the Network
-              </a>
+              </button>
             </div>
           </div>
           </div>

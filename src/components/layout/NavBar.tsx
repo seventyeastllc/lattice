@@ -47,7 +47,7 @@ export default function NavBar() {
         <nav style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
           {[
             { label: "Directory", to: "/directory", isRouterLink: true },
-            { label: "About", to: "#about", isRouterLink: false },
+            { label: "About", to: "/#why", isRouterLink: false },
             { label: "Join the Network", to: "/join", isRouterLink: true },
           ].map(({ label, to, isRouterLink }) =>
             isRouterLink ? (
