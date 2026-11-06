@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
 import { useSavedResources } from "@/hooks/useSavedResources";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { supabase } from "@/lib/supabase";
 import NavBar from "@/components/layout/NavBar";
 
@@ -126,6 +127,7 @@ export default function DashboardPage() {
   const requestsRef = useRef<HTMLDivElement>(null);
   const [showProfile, setShowProfile] = useState(false);
 
+  const { data: announcements = [] } = useAnnouncements();
   const { data: savedIds = [], isLoading: savedLoading } = useSavedResources(user?.id);
   const { data: savedOrgs = [], isLoading: savedOrgsLoading } = useQuery({
     queryKey: ["saved_orgs", savedIds],
@@ -424,6 +426,22 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Announcements */}
+        {announcements.length > 0 && (
+          <div style={{ marginTop: "2rem" }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: TEXT, margin: "0 0 1rem" }}>Network Announcements</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {announcements.map((ann) => (
+                <div key={ann.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${TEAL}`, borderRadius: "0 8px 8px 0", padding: "1rem 1.25rem" }}>
+                  {ann.title && <p style={{ color: TEXT, fontWeight: 700, fontSize: "0.875rem", margin: "0 0 0.25rem" }}>{ann.title}</p>}
+                  <p style={{ color: TEXT, fontSize: "0.9rem", lineHeight: 1.65, margin: "0 0 0.3rem" }}>{ann.body}</p>
+                  <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{new Date(ann.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

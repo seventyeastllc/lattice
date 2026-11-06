@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
 import NavBar from "@/components/layout/NavBar";
 import Footer from "@/components/layout/Footer";
 
@@ -39,20 +40,10 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-const ANNOUNCEMENTS = [
-  {
-    text: "Lattice is now in private development. Thank you for being part of the founding network.",
-    date: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-  },
-  {
-    text: "New resource profiles are being added. Explore the directory and save organizations to your workspace.",
-    date: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-  },
-];
-
 export default function NetworkPage() {
   const { user, role } = useAuth();
   const { data: requests = [], isLoading } = useMyRequests();
+  const { data: announcements = [] } = useAnnouncements();
   const [statusFilter, setStatusFilter] = useState("all");
 
   if (!user) return <Navigate to="/login" replace />;
@@ -168,17 +159,20 @@ export default function NetworkPage() {
         </div>
 
         {/* Section 3: Announcements */}
-        <div>
-          <h2 style={{ color: TEXT, fontWeight: 700, fontSize: "1.0625rem", margin: "0 0 1rem" }}>Network Announcements</h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {ANNOUNCEMENTS.map((ann, i) => (
-              <div key={i} style={{ background: WHITE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${TEAL}`, borderRadius: "0 8px 8px 0", padding: "1rem 1.25rem" }}>
-                <p style={{ color: TEXT, fontSize: "0.9rem", lineHeight: 1.65, margin: "0 0 0.3rem" }}>{ann.text}</p>
-                <p style={{ color: MUTED, fontSize: "0.775rem", margin: 0 }}>{ann.date}</p>
-              </div>
-            ))}
+        {announcements.length > 0 && (
+          <div>
+            <h2 style={{ color: TEXT, fontWeight: 700, fontSize: "1.0625rem", margin: "0 0 1rem" }}>Network Announcements</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {announcements.map((ann) => (
+                <div key={ann.id} style={{ background: WHITE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${TEAL}`, borderRadius: "0 8px 8px 0", padding: "1rem 1.25rem" }}>
+                  {ann.title && <p style={{ color: TEXT, fontSize: "0.875rem", fontWeight: 700, margin: "0 0 0.25rem" }}>{ann.title}</p>}
+                  <p style={{ color: TEXT, fontSize: "0.9rem", lineHeight: 1.65, margin: "0 0 0.3rem" }}>{ann.body}</p>
+                  <p style={{ color: MUTED, fontSize: "0.775rem", margin: 0 }}>{new Date(ann.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Section 4: Coming soon */}
         <div style={{ background: "rgba(233,162,107,0.08)", border: `1px solid rgba(233,162,107,0.3)`, borderRadius: "8px", padding: "1.5rem" }}>

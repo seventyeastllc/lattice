@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import CRMView from "@/features/crm/CRMView";
+import { useAllKnowledgeResources, useKnowledgeResourceMutations } from "@/hooks/useKnowledgeAdmin";
+import { useAllAnnouncements, useAnnouncementMutations } from "@/hooks/useAnnouncementsAdmin";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const DARK    = "#1E3A4A";
@@ -238,7 +240,7 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "crm";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "crm" | "knowledge" | "announcements";
 
 function Sidebar({
   view, setView, onSignOut,
@@ -254,6 +256,8 @@ function Sidebar({
     { id: "requests"      as View, label: "Requests",      icon: "🔗", badge: pendingReqs },
     { id: "organizations" as View, label: "Organizations", icon: "🏢", badge: 0 },
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
+    { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
+    { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
   ];
 
   return (
@@ -1008,6 +1012,192 @@ function Organizations() {
   );
 }
 
+// ─── Knowledge Library Admin ──────────────────────────────────────────────────
+function KnowledgeLibrary() {
+  const { data: resources = [], isLoading } = useAllKnowledgeResources();
+  const { create, update, remove } = useKnowledgeResourceMutations();
+  const [editing, setEditing] = useState<null | typeof resources[0]>(null);
+  const [form, setForm] = useState({ title: "", description: "", category: "guide", url: "", is_published: true });
+  const [showForm, setShowForm] = useState(false);
+
+  function openNew() { setEditing(null); setForm({ title: "", description: "", category: "guide", url: "", is_published: true }); setShowForm(true); }
+  function openEdit(r: typeof resources[0]) { setEditing(r); setForm({ title: r.title, description: r.description ?? "", category: r.category, url: r.url ?? "", is_published: r.is_published }); setShowForm(true); }
+
+  async function handleSave() {
+    if (editing) {
+      await update.mutateAsync({ id: editing.id, ...form });
+    } else {
+      await create.mutateAsync(form);
+    }
+    setShowForm(false);
+  }
+
+  const CATEGORIES = ["guide", "template", "tool", "policy", "training", "other"];
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 0.2rem" }}>Knowledge Library</h1>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>{resources.length} resources · {resources.filter(r => r.is_published).length} published</p>
+        </div>
+        <button onClick={openNew} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "7px", fontWeight: 700, fontSize: "0.875rem", padding: "0.6rem 1.25rem", cursor: "pointer" }}>
+          + Add resource
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 700, color: TEXT, margin: "0 0 1.25rem" }}>{editing ? "Edit resource" : "New resource"}</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>Title</label>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>Category</label>
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit" }}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>Description</label>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit", resize: "vertical" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>URL</label>
+              <input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://…" style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit" }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", paddingTop: "1.4rem" }}>
+              <input type="checkbox" id="kr-published" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} />
+              <label htmlFor="kr-published" style={{ fontSize: "0.875rem", color: TEXT }}>Published</label>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+            <button onClick={() => setShowForm(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: MUTED, fontWeight: 600, fontSize: "0.875rem", padding: "0.6rem 1.25rem", borderRadius: "7px", cursor: "pointer" }}>Cancel</button>
+            <button onClick={handleSave} disabled={create.isPending || update.isPending} style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.6rem 1.5rem", borderRadius: "7px", cursor: "pointer" }}>
+              {create.isPending || update.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 80px 100px", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
+          {["Title", "Category", "URL", "Status", ""].map(h => (
+            <p key={h} style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
+          ))}
+        </div>
+        {isLoading && [1,2,3].map(i => <div key={i} style={{ padding: "1rem 1.25rem", borderBottom: `1px solid ${BORDER}` }}><Skeleton h="32px" /></div>)}
+        {resources.map(r => (
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 80px 100px", gap: "1rem", padding: "0.9rem 1.25rem", borderBottom: `1px solid ${BORDER}`, alignItems: "center" }}>
+            <div>
+              <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>{r.title}</p>
+              {r.description && <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.description}</p>}
+            </div>
+            <span style={{ fontSize: "0.78rem", color: MUTED }}>{r.category}</span>
+            <span style={{ fontSize: "0.78rem", color: TEAL, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.url ? new URL(r.url.startsWith("http") ? r.url : "https://" + r.url).hostname : "—"}</span>
+            <span style={{ background: r.is_published ? "#DCFCE7" : "#F3F4F6", color: r.is_published ? "#166534" : MUTED, fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "9999px", whiteSpace: "nowrap", display: "inline-block" }}>
+              {r.is_published ? "Live" : "Draft"}
+            </span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button onClick={() => openEdit(r)} style={{ background: "none", border: `1px solid ${BORDER}`, color: TEXT, fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.6rem", borderRadius: "5px", cursor: "pointer" }}>Edit</button>
+              <button onClick={() => remove.mutate(r.id)} style={{ background: "none", border: "1px solid #FECACA", color: "#B91C1C", fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.6rem", borderRadius: "5px", cursor: "pointer" }}>Del</button>
+            </div>
+          </div>
+        ))}
+        {!isLoading && resources.length === 0 && <p style={{ color: MUTED, padding: "2rem 1.25rem", margin: 0, fontSize: "0.9rem" }}>No resources yet. Add one above.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Announcements Admin ──────────────────────────────────────────────────────
+function AnnouncementsAdmin() {
+  const { data: announcements = [], isLoading } = useAllAnnouncements();
+  const { create, update, remove } = useAnnouncementMutations();
+  const [editing, setEditing] = useState<null | typeof announcements[0]>(null);
+  const [form, setForm] = useState({ title: "", body: "", is_published: true });
+  const [showForm, setShowForm] = useState(false);
+
+  function openNew() { setEditing(null); setForm({ title: "", body: "", is_published: true }); setShowForm(true); }
+  function openEdit(a: typeof announcements[0]) { setEditing(a); setForm({ title: a.title ?? "", body: a.body, is_published: a.is_published }); setShowForm(true); }
+
+  async function handleSave() {
+    if (editing) {
+      await update.mutateAsync({ id: editing.id, ...form });
+    } else {
+      await create.mutateAsync(form);
+    }
+    setShowForm(false);
+  }
+
+  function fmt2(d: string) { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 0.2rem" }}>Announcements</h1>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>{announcements.length} total · {announcements.filter(a => a.is_published).length} published</p>
+        </div>
+        <button onClick={openNew} style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "7px", fontWeight: 700, fontSize: "0.875rem", padding: "0.6rem 1.25rem", cursor: "pointer" }}>
+          + New announcement
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 700, color: TEXT, margin: "0 0 1.25rem" }}>{editing ? "Edit announcement" : "New announcement"}</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>Title (optional)</label>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: MUTED, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>Message</label>
+              <textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={3} style={{ width: "100%", boxSizing: "border-box", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", fontFamily: "inherit", resize: "vertical" }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input type="checkbox" id="ann-published" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} />
+              <label htmlFor="ann-published" style={{ fontSize: "0.875rem", color: TEXT }}>Publish immediately</label>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+            <button onClick={() => setShowForm(false)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: MUTED, fontWeight: 600, fontSize: "0.875rem", padding: "0.6rem 1.25rem", borderRadius: "7px", cursor: "pointer" }}>Cancel</button>
+            <button onClick={handleSave} disabled={create.isPending || update.isPending} style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.6rem 1.5rem", borderRadius: "7px", cursor: "pointer" }}>
+              {create.isPending || update.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {isLoading && [1,2].map(i => <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem" }}><Skeleton h="40px" /></div>)}
+        {announcements.map(a => (
+          <div key={a.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${a.is_published ? TEAL : BORDER}`, borderRadius: "0 8px 8px 0", padding: "1rem 1.25rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+              <div style={{ flex: 1 }}>
+                {a.title && <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.3rem" }}>{a.title}</p>}
+                <p style={{ color: TEXT, fontSize: "0.875rem", lineHeight: 1.65, margin: "0 0 0.3rem" }}>{a.body}</p>
+                <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{fmt2(a.created_at)}</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                <span style={{ background: a.is_published ? "#DCFCE7" : "#F3F4F6", color: a.is_published ? "#166534" : MUTED, fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "9999px" }}>
+                  {a.is_published ? "Live" : "Draft"}
+                </span>
+                <button onClick={() => openEdit(a)} style={{ background: "none", border: `1px solid ${BORDER}`, color: TEXT, fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.6rem", borderRadius: "5px", cursor: "pointer" }}>Edit</button>
+                <button onClick={() => remove.mutate(a.id)} style={{ background: "none", border: "1px solid #FECACA", color: "#B91C1C", fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.6rem", borderRadius: "5px", cursor: "pointer" }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!isLoading && announcements.length === 0 && <p style={{ color: MUTED, fontSize: "0.9rem" }}>No announcements yet. Create one above.</p>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [view, setView] = useState<View>("overview");
@@ -1028,6 +1218,8 @@ export default function AdminPage() {
     requests:      <ConnectionRequests />,
     organizations: <Organizations />,
     crm:           <CRMView />,
+    knowledge:     <KnowledgeLibrary />,
+    announcements: <AnnouncementsAdmin />,
   }[view];
 
   return (
