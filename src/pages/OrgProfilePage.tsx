@@ -4,6 +4,7 @@ import NavBar from "@/components/layout/NavBar";
 import Footer from "@/components/layout/Footer";
 import ConnectionModal from "@/features/directory/ConnectionModal";
 import { useOrgBySlug } from "@/hooks/useOrgBySlug";
+import { useSavedResources, useSaveToggle } from "@/hooks/useSavedResources";
 import { useAuth } from "@/context/AuthContext";
 import { SERVICE_CATEGORY_LABELS } from "@/types/directory";
 import type { OrgType } from "@/types/directory";
@@ -36,6 +37,14 @@ export default function OrgProfilePage() {
   const isProvider = !!user;
   const { data: org, isLoading, isError } = useOrgBySlug(slug);
   const [showModal, setShowModal] = useState(false);
+  const { data: savedIds = [] } = useSavedResources(user?.id);
+  const { save, unsave } = useSaveToggle(user?.id);
+  const isSaved = org ? savedIds.includes(org.id) : false;
+  function handleSaveToggle() {
+    if (!org || !user) return;
+    if (isSaved) unsave.mutate(org.id);
+    else save.mutate(org.id);
+  }
 
   return (
     <>
@@ -95,9 +104,32 @@ export default function OrgProfilePage() {
                     </span>
                   )}
                 </div>
-                <h1 style={{ color: "#ffffff", fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, margin: "0 0 0.5rem", lineHeight: 1.15 }}>
-                  {org.name}
-                </h1>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                  <h1 style={{ color: "#ffffff", fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, margin: "0 0 0.5rem", lineHeight: 1.15, flex: 1 }}>
+                    {org.name}
+                  </h1>
+                  {isProvider && (
+                    <button
+                      onClick={handleSaveToggle}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                        background: isSaved ? "rgba(42,157,143,0.2)" : "rgba(255,255,255,0.1)",
+                        border: `1px solid ${isSaved ? "rgba(42,157,143,0.5)" : "rgba(255,255,255,0.25)"}`,
+                        color: isSaved ? "#2A9D8F" : "rgba(255,255,255,0.75)",
+                        fontWeight: 600, fontSize: "0.8125rem",
+                        padding: "0.4rem 0.875rem", cursor: "pointer",
+                        borderRadius: 4, transition: "all 0.15s", whiteSpace: "nowrap", flexShrink: 0,
+                      }}
+                    >
+                      {isSaved ? (
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h10a1 1 0 011 1v11l-6-3-6 3V3a1 1 0 011-1z" fill="#2A9D8F" stroke="#2A9D8F" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h10a1 1 0 011 1v11l-6-3-6 3V3a1 1 0 011-1z" stroke="rgba(255,255,255,0.75)" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                      )}
+                      {isSaved ? "Saved" : "Save"}
+                    </button>
+                  )}
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                   <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.875rem", margin: 0 }}>
                     {org.service_area_counties && org.service_area_counties.length > 1
@@ -353,6 +385,18 @@ export default function OrgProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Suggest an edit — members only */}
+        {isProvider && org && (
+          <div style={{ maxWidth: 1024, margin: "0 auto", padding: "0 2rem 2rem", textAlign: "right" }}>
+            <a
+              href={`mailto:team@seedexchange.org?subject=Suggest an edit: ${encodeURIComponent(org.name)}&body=Organization: ${encodeURIComponent(org.name)}%0AWhat needs updating:%0A`}
+              style={{ color: "#5C7380", fontSize: "0.8rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+            >
+              ✏ Suggest an edit to this listing
+            </a>
+          </div>
+        )}
 
         <Footer />
       </div>

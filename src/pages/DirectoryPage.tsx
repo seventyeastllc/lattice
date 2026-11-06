@@ -5,6 +5,7 @@ import Footer from "@/components/layout/Footer";
 import OrgCard from "@/features/directory/OrgCard";
 import ConnectionModal from "@/features/directory/ConnectionModal";
 import { useDirectory } from "@/hooks/useDirectory";
+import { useSavedResources, useSaveToggle } from "@/hooks/useSavedResources";
 import { useAuth } from "@/context/AuthContext";
 import type { DirectoryOrg } from "@/types/directory";
 import { SERVICE_CATEGORY_LABELS } from "@/types/directory";
@@ -36,6 +37,17 @@ export default function DirectoryPage() {
   const { user } = useAuth();
   const isProvider = !!user;
   const { data: orgs = [], isLoading, isError } = useDirectory();
+  const { data: savedIds = [] } = useSavedResources(user?.id);
+  const { save, unsave } = useSaveToggle(user?.id);
+
+  function handleSaveToggle(orgId: string) {
+    if (!user) return;
+    if (savedIds.includes(orgId)) {
+      unsave.mutate(orgId);
+    } else {
+      save.mutate(orgId);
+    }
+  }
 
   const [search, setSearch]         = useState("");
   const [region, setRegion]         = useState("all");
@@ -357,7 +369,7 @@ export default function DirectoryPage() {
               </div>
             ) : (
               filtered.map((org) => (
-                <OrgCard key={org.id} org={org} onConnect={setModalOrg} isProvider={isProvider} />
+                <OrgCard key={org.id} org={org} onConnect={setModalOrg} isProvider={isProvider} isSaved={savedIds.includes(org.id)} onSaveToggle={handleSaveToggle} />
               ))
             )}
           </div>

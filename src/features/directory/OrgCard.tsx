@@ -7,6 +7,8 @@ interface Props {
   org: DirectoryOrg;
   onConnect: (org: DirectoryOrg) => void;
   isProvider?: boolean;
+  isSaved?: boolean;
+  onSaveToggle?: (orgId: string) => void;
 }
 
 const ORG_TYPE_LABELS: Record<OrgType, string> = {
@@ -35,7 +37,7 @@ function serviceLabel(svc: { name: string; category: string }): string {
   return SERVICE_CATEGORY_LABELS[svc.category] ?? svc.name;
 }
 
-export default function OrgCard({ org, onConnect, isProvider = false }: Props) {
+export default function OrgCard({ org, onConnect, isProvider = false, isSaved = false, onSaveToggle }: Props) {
   const [hovered, setBtnHovered] = useState(false);
   const [cardHovered, setCardHovered] = useState(false);
   const [phoneHovered, setPhoneHovered] = useState(false);
@@ -56,8 +58,34 @@ export default function OrgCard({ org, onConnect, isProvider = false }: Props) {
         flexDirection: "column",
         transition: "border-color 0.15s, box-shadow 0.15s",
         boxShadow: cardHovered ? "0 4px 16px rgba(26,43,53,0.09)" : "none",
+        position: "relative",
       }}
     >
+      {/* Bookmark button — members only */}
+      {isProvider && onSaveToggle && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSaveToggle(org.id); }}
+          aria-label={isSaved ? "Remove from saved" : "Save organization"}
+          style={{
+            position: "absolute", top: "0.625rem", right: "0.625rem", zIndex: 2,
+            background: isSaved ? "rgba(42,157,143,0.1)" : "rgba(255,255,255,0.9)",
+            border: `1px solid ${isSaved ? "rgba(42,157,143,0.3)" : "#E2E8E6"}`,
+            borderRadius: "4px", width: 28, height: 28,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", transition: "all 0.15s", padding: 0,
+          }}
+        >
+          {isSaved ? (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M3 2h10a1 1 0 011 1v11l-6-3-6 3V3a1 1 0 011-1z" fill="#2A9D8F" stroke="#2A9D8F" strokeWidth="1.5" strokeLinejoin="round"/>
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M3 2h10a1 1 0 011 1v11l-6-3-6 3V3a1 1 0 011-1z" stroke="#5C7380" strokeWidth="1.5" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </button>
+      )}
       {/* Main content — linked to profile */}
       <Link
         to={`/directory/${org.slug}`}

@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
+import { useSavedResources } from "@/hooks/useSavedResources";
 import { supabase } from "@/lib/supabase";
 import NavBar from "@/components/layout/NavBar";
 
@@ -123,6 +125,23 @@ export default function DashboardPage() {
   const { data: requests = [], isLoading } = useMyRequests();
   const requestsRef = useRef<HTMLDivElement>(null);
   const [showProfile, setShowProfile] = useState(false);
+
+  const { data: savedIds = [], isLoading: savedLoading } = useSavedResources(user?.id);
+  const { data: savedOrgs = [], isLoading: savedOrgsLoading } = useQuery({
+    queryKey: ["saved_orgs", savedIds],
+    queryFn: async () => {
+      if (savedIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id, name, slug, org_type, county, description")
+        .in("id", savedIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: savedIds.length > 0,
+    networkMode: "always",
+    retry: false,
+  });
 
   const displayName = user?.user_metadata?.full_name ?? user?.email ?? "there";
   const firstName   = typeof displayName === "string" ? displayName.split(" ")[0] : displayName;
@@ -342,6 +361,67 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
+
+        {/* Saved Organizations */}
+        <div style={{ marginTop: "3rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: TEXT, margin: 0 }}>Saved Organizations</h2>
+            <Link to="/directory" style={{ color: TEAL, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
+              Browse Directory →
+            </Link>
+          </div>
+
+          {(savedLoading || savedOrgsLoading) && (
+            <p style={{ color: MUTED, fontSize: "0.875rem" }}>Loading saved organizations…</p>
+          )}
+
+          {!savedLoading && !savedOrgsLoading && savedIds.length === 0 && (
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "2.5rem 1.5rem", textAlign: "center" }}>
+              <p style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>🔖</p>
+              <p style={{ fontWeight: 600, color: TEXT, marginBottom: "0.25rem" }}>No saved organizations yet</p>
+              <p style={{ color: MUTED, fontSize: "0.875rem", marginBottom: "1.25rem" }}>
+                Browse the directory to save resources for quick access.
+              </p>
+              <Link to="/directory" style={{ display: "inline-block", backgroundColor: TEAL, color: "#FFFFFF", padding: "0.625rem 1.5rem", borderRadius: "8px", fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
+                Browse the Directory
+              </Link>
+            </div>
+          )}
+
+          {!savedLoading && !savedOrgsLoading && savedOrgs.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
+              {savedOrgs.map((org: { id: string; name: string; slug: string; org_type: string; county: string; description: string }) => (
+                <Link
+                  key={org.id}
+                  to={`/directory/${org.slug}`}
+                  style={{ textDecoration: "none" }}
+                >
+                  <div style={{
+                    background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px",
+                    padding: "1.25rem", transition: "border-color 0.15s, box-shadow 0.15s",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.375rem" }}>
+                      <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.9375rem", margin: 0, lineHeight: 1.3 }}>{org.name}</p>
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
+                        <path d="M3 2h10a1 1 0 011 1v11l-6-3-6 3V3a1 1 0 011-1z" fill={TEAL} stroke={TEAL} strokeWidth="1.5" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <p style={{ color: MUTED, fontSize: "0.775rem", margin: "0 0 0.5rem" }}>{org.county} County</p>
+                    {org.description && (
+                      <p style={{
+                        color: MUTED, fontSize: "0.8125rem", lineHeight: 1.55, margin: 0,
+                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                      }}>
+                        {org.description}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
     {showProfile && <ProfileModal user={user} onClose={() => setShowProfile(false)} />}
