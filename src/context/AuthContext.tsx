@@ -83,9 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
-        // Redirect to reset page, preserving the hash so the token survives
+        sessionStorage.setItem("lattice_recovery", "1");
         if (!window.location.pathname.startsWith("/reset-password")) {
-          window.location.replace("/reset-password" + window.location.hash);
+          window.location.replace("/reset-password");
         }
         return;
       }

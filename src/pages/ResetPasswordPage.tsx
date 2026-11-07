@@ -13,24 +13,36 @@ export default function ResetPasswordPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Supabase appends #access_token=...&type=recovery to the redirect URL.
-    // onAuthStateChange fires PASSWORD_RECOVERY when the token is valid.
+    const flag = sessionStorage.getItem("lattice_recovery");
+
+    if (flag) {
+      // Arrived here via AuthContext's PASSWORD_RECOVERY redirect — session is live
+      sessionStorage.removeItem("lattice_recovery");
+      setState("ready");
+      return;
+    }
+
+    // Fallback: listen for PASSWORD_RECOVERY in case the event fires after mount
+    // (e.g. direct link with hash still present)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         setState("ready");
       }
     });
 
-    // If there's no recovery token at all (direct navigation), show error.
-    const hash = window.location.hash;
-    if (!hash.includes("access_token") && !hash.includes("type=recovery")) {
-      // Give the listener 1.5s to fire before showing the invalid-link message.
-      const timer = setTimeout(() => {
-        setState((s) => s === "loading" ? "error" : s);
-        setErrorMsg("This link is invalid or has already been used. Please request a new one.");
-      }, 1500);
-      return () => { clearTimeout(timer); subscription.unsubscribe(); };
-    }
+    // Also check for an existing recovery session via getSession
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setState("ready");
+      } else {
+        // No flag, no session, no event — this is a direct/invalid navigation
+        const timer = setTimeout(() => {
+          setState((s) => s === "loading" ? "error" : s);
+          setErrorMsg("This link is invalid or has already been used. Please request a new one.");
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    });
 
     return () => subscription.unsubscribe();
   }, []);
