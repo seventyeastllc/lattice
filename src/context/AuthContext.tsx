@@ -83,8 +83,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
-        // Redirect to reset page regardless of where the hash landed
-        window.location.replace("/reset-password");
+        // Redirect to reset page, preserving the hash so the token survives
+        if (!window.location.pathname.startsWith("/reset-password")) {
+          window.location.replace("/reset-password" + window.location.hash);
+        }
         return;
       }
       setSession(session);
