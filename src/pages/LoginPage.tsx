@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
+
+type Mode = "login" | "forgot" | "forgot-sent";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
 
+  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +25,21 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       navigate("/dashboard");
+    }
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+    } else {
+      setMode("forgot-sent");
     }
   }
 
@@ -71,134 +90,145 @@ export default function LoginPage() {
             marginBottom: "1.75rem",
           }}
         >
-          Welcome back
+          {mode === "login" ? "Welcome back" : mode === "forgot" ? "Reset your password" : "Check your email"}
         </h1>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-          {/* Email */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-            <label
-              htmlFor="email"
-              style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1A2B35" }}
-            >
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{
-                padding: "0.625rem 0.875rem",
-                border: "1.5px solid #E2E8E6",
-                borderRadius: "8px",
-                fontSize: "0.9375rem",
-                color: "#1A2B35",
-                outline: "none",
-                transition: "border-color 0.15s",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#2A9D8F")}
-              onBlur={(e) => (e.target.style.borderColor = "#E2E8E6")}
-            />
-          </div>
-
-          {/* Password */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label
-                htmlFor="password"
-                style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1A2B35" }}
+        {/* ── Forgot-sent confirmation ── */}
+        {mode === "forgot-sent" && (
+          <div>
+            <p style={{ fontSize: "0.9375rem", color: "#5C7380", lineHeight: 1.65, marginBottom: "1.5rem" }}>
+              We sent a password reset link to <strong style={{ color: "#1A2B35" }}>{email}</strong>. Check your inbox and click the link to set a new password.
+            </p>
+            <p style={{ fontSize: "0.8125rem", color: "#9DB4AE" }}>
+              Didn't get it? Check spam, or{" "}
+              <button
+                onClick={() => { setMode("forgot"); setError(null); }}
+                style={{ background: "none", border: "none", color: "#2A9D8F", cursor: "pointer", fontSize: "0.8125rem", padding: 0 }}
               >
-                Password
+                try again
+              </button>.
+            </p>
+          </div>
+        )}
+
+        {/* ── Forgot password form ── */}
+        {mode === "forgot" && (
+          <form onSubmit={handleForgot} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <p style={{ fontSize: "0.875rem", color: "#5C7380", margin: 0 }}>
+              Enter your account email and we'll send you a reset link.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <label htmlFor="email-forgot" style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1A2B35" }}>
+                Email address
               </label>
-              <a
-                href="#"
-                style={{
-                  fontSize: "0.8125rem",
-                  color: "#2A9D8F",
-                  textDecoration: "none",
-                }}
-              >
-                Forgot password?
-              </a>
+              <input
+                id="email-forgot"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ padding: "0.625rem 0.875rem", border: "1.5px solid #E2E8E6", borderRadius: "8px", fontSize: "0.9375rem", color: "#1A2B35", outline: "none" }}
+                onFocus={(e) => (e.target.style.borderColor = "#2A9D8F")}
+                onBlur={(e) => (e.target.style.borderColor = "#E2E8E6")}
+              />
             </div>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{
-                padding: "0.625rem 0.875rem",
-                border: "1.5px solid #E2E8E6",
-                borderRadius: "8px",
-                fontSize: "0.9375rem",
-                color: "#1A2B35",
-                outline: "none",
-                transition: "border-color 0.15s",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#2A9D8F")}
-              onBlur={(e) => (e.target.style.borderColor = "#E2E8E6")}
-            />
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div
-              style={{
-                backgroundColor: "#FEF2F2",
-                border: "1px solid #FECACA",
-                borderRadius: "8px",
-                padding: "0.75rem 1rem",
-                fontSize: "0.875rem",
-                color: "#B91C1C",
-              }}
+            {error && (
+              <div style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.75rem 1rem", fontSize: "0.875rem", color: "#B91C1C" }}>
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ backgroundColor: loading ? "#4A7C6F" : "#2A9D8F", color: "#FFFFFF", padding: "0.75rem", borderRadius: "8px", border: "none", fontSize: "0.9375rem", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer" }}
             >
-              {error}
+              {loading ? "Sending…" : "Send reset link"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode("login"); setError(null); }}
+              style={{ background: "none", border: "none", color: "#5C7380", fontSize: "0.875rem", cursor: "pointer", textAlign: "center" }}
+            >
+              ← Back to sign in
+            </button>
+          </form>
+        )}
+
+        {/* ── Sign-in form ── */}
+        {mode === "login" && (
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <label htmlFor="email" style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1A2B35" }}>
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ padding: "0.625rem 0.875rem", border: "1.5px solid #E2E8E6", borderRadius: "8px", fontSize: "0.9375rem", color: "#1A2B35", outline: "none", transition: "border-color 0.15s" }}
+                onFocus={(e) => (e.target.style.borderColor = "#2A9D8F")}
+                onBlur={(e) => (e.target.style.borderColor = "#E2E8E6")}
+              />
             </div>
-          )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              backgroundColor: loading ? "#4A7C6F" : "#2A9D8F",
-              color: "#FFFFFF",
-              padding: "0.75rem",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "0.9375rem",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background-color 0.15s",
-              marginTop: "0.25rem",
-            }}
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label htmlFor="password" style={{ fontSize: "0.875rem", fontWeight: 500, color: "#1A2B35" }}>
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setMode("forgot"); setError(null); }}
+                  style={{ background: "none", border: "none", fontSize: "0.8125rem", color: "#2A9D8F", cursor: "pointer", padding: 0 }}
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ padding: "0.625rem 0.875rem", border: "1.5px solid #E2E8E6", borderRadius: "8px", fontSize: "0.9375rem", color: "#1A2B35", outline: "none", transition: "border-color 0.15s" }}
+                onFocus={(e) => (e.target.style.borderColor = "#2A9D8F")}
+                onBlur={(e) => (e.target.style.borderColor = "#E2E8E6")}
+              />
+            </div>
 
-        {/* Divider */}
-        <div
-          style={{
-            borderTop: "1px solid #E2E8E6",
-            margin: "1.75rem 0 1.25rem",
-          }}
-        />
+            {error && (
+              <div style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "0.75rem 1rem", fontSize: "0.875rem", color: "#B91C1C" }}>
+                {error}
+              </div>
+            )}
 
-        <p style={{ fontSize: "0.875rem", color: "#5C7380", textAlign: "center" }}>
-          Not a member?{" "}
-          <Link
-            to="/#join"
-            style={{ color: "#2A9D8F", fontWeight: 500, textDecoration: "none" }}
-          >
-            Join the Network
-          </Link>
-        </p>
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ backgroundColor: loading ? "#4A7C6F" : "#2A9D8F", color: "#FFFFFF", padding: "0.75rem", borderRadius: "8px", border: "none", fontSize: "0.9375rem", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", transition: "background-color 0.15s", marginTop: "0.25rem" }}
+            >
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        )}
+
+        {/* Divider + join link (login mode only) */}
+        {mode === "login" && (
+          <>
+            <div style={{ borderTop: "1px solid #E2E8E6", margin: "1.75rem 0 1.25rem" }} />
+            <p style={{ fontSize: "0.875rem", color: "#5C7380", textAlign: "center" }}>
+              Not a member?{" "}
+              <Link to="/join" style={{ color: "#2A9D8F", fontWeight: 500, textDecoration: "none" }}>
+                Join the Network
+              </Link>
+            </p>
+          </>
+        )}
       </div>
 
       {/* Back to home */}

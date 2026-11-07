@@ -12,6 +12,7 @@ import ResourcesPage from "@/pages/ResourcesPage";
 import KnowledgePage from "@/pages/KnowledgePage";
 import NetworkPage from "@/pages/NetworkPage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import DemoBanner from "@/components/layout/DemoBanner";
 
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/directory/:slug" element={<OrgProfilePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/join" element={<JoinPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route
               path="/dashboard"
               element={
