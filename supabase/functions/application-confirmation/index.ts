@@ -1,6 +1,6 @@
 const RESEND_KEY   = Deno.env.get("RESEND_API_KEY")!;
 const DASHBOARD    = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com";
-const FROM         = "Lattice Network <team@seedexchange.org>";
+const FROM         = "Lattice Network <team@seedxga.com>";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
           <td style="background:#F7F9F8;border:1px solid #E2E8E6;border-top:0;border-radius:0 0 12px 12px;padding:24px 40px;text-align:center;">
             <p style="margin:0 0 6px;font-size:12px;color:#5C7380;">
               Questions? Reply to this email or write to
-              <a href="mailto:team@seedexchange.org" style="color:#2A9D8F;text-decoration:none;">team@seedexchange.org</a>
+              <a href="mailto:team@seedxga.com" style="color:#2A9D8F;text-decoration:none;">team@seedxga.com</a>
             </p>
             <p style="margin:0;font-size:11px;color:#9DB4AE;">The Seed Exchange · Northwest Georgia</p>
           </td>
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       from: FROM,
       to: [email],
-      reply_to: "team@seedexchange.org",
+      reply_to: "team@seedxga.com",
       subject: `Application received — ${org_name}`,
       html,
     }),
