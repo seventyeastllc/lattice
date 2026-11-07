@@ -733,9 +733,9 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle?: 
 }
 
 // ─── Step 3 — Review & submit ─────────────────────────────────────────────────
-function ReviewStep({ tier, form, lead, onBack, onSubmit, submitting }: {
+function ReviewStep({ tier, form, lead, onBack, onSubmit, submitting, submitError }: {
   tier: TierDef; form: FormData; lead: PrmLead | null;
-  onBack: () => void; onSubmit: () => void; submitting: boolean;
+  onBack: () => void; onSubmit: () => void; submitting: boolean; submitError: string | null;
 }) {
   return (
     <div>
@@ -777,6 +777,11 @@ function ReviewStep({ tier, form, lead, onBack, onSubmit, submitting }: {
         Your contact information will only be shared with network members through TSE-facilitated connections.
       </div>
 
+      {submitError && (
+        <p style={{ color: RED, fontSize: "0.875rem", margin: "0 0 1rem", padding: "0.75rem 1rem", background: `${RED}0D`, border: `1px solid ${RED}40`, borderRadius: "6px" }}>
+          {submitError}
+        </p>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <button onClick={onBack} style={{ background: "transparent", border: `1.5px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.9rem", padding: "0.7rem 1.5rem", borderRadius: "8px", cursor: "pointer" }}>
           ← Edit
@@ -840,6 +845,7 @@ export default function JoinPage() {
   const [selected, setSelected]     = useState<Tier | null>(null);
   const [form, setForm]             = useState<FormData>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const tier = TIERS.find(t => t.id === selected) ?? TIERS[0];
 
@@ -871,11 +877,14 @@ export default function JoinPage() {
 
   async function handleSubmit() {
     setSubmitting(true);
+    setSubmitError(null);
+    const orgId = crypto.randomUUID();
     const slug = form.org_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) + "-" + Date.now().toString(36);
 
-    const { data: orgData, error: orgError } = await supabase
+    const { error: orgError } = await supabase
       .from("organizations")
       .insert({
+        id: orgId,
         name: form.org_name, slug,
         org_type: form.org_type,
         county: form.county, description: form.description,
@@ -885,13 +894,14 @@ export default function JoinPage() {
         has_funding_available: form.has_funding,
         claimed_lead_id: selectedLead?.record_id ?? null,
         is_active: false, is_verified: false,
-      })
-      .select("id")
-      .single();
+      });
 
-    if (orgError || !orgData) { console.error(orgError); setSubmitting(false); return; }
-
-    const orgId = (orgData as { id: string }).id;
+    if (orgError) {
+      console.error(orgError);
+      setSubmitError("Something went wrong submitting your application. Please try again or contact support@seedxga.com.");
+      setSubmitting(false);
+      return;
+    }
 
     await supabase.from("contacts").insert({
       organization_id: orgId,
@@ -946,7 +956,7 @@ export default function JoinPage() {
           {step === 0 && <ClaimSearchStep onClaim={handleClaim} onNew={handleNew} />}
           {step === 1 && <TierPicker selected={selected} onSelect={setSelected} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && selected && <AppForm tier={tier} form={form} prefilled={prefilled} onChange={patch} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
-          {step === 3 && selected && <ReviewStep tier={tier} form={form} lead={selectedLead} onBack={() => setStep(2)} onSubmit={handleSubmit} submitting={submitting} />}
+          {step === 3 && selected && <ReviewStep tier={tier} form={form} lead={selectedLead} onBack={() => setStep(2)} onSubmit={handleSubmit} submitting={submitting} submitError={submitError} />}
           {step === "done" && <SuccessState tier={tier} name={form.contact_name} />}
         </div>
         <Footer />
