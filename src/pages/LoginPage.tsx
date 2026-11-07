@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabase";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 type Mode = "login" | "forgot" | "forgot-sent";
 
@@ -32,14 +34,22 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-    } else {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-reset-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": ANON_KEY,
+          "Authorization": `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error("Failed to send reset email");
       setMode("forgot-sent");
+    } catch {
+      setError("Something went wrong. Please try again or contact support@seedxga.com.");
+    } finally {
+      setLoading(false);
     }
   }
 
