@@ -877,6 +877,8 @@ export default function JoinPage() {
     const orgId = crypto.randomUUID();
     const slug = form.org_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) + "-" + Date.now().toString(36);
 
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+
     const { error: orgError } = await supabase
       .from("organizations")
       .insert({
@@ -890,6 +892,7 @@ export default function JoinPage() {
         has_funding_available: form.has_funding,
         claimed_lead_id: selectedLead?.record_id ?? null,
         is_active: false, is_verified: false,
+        user_id: currentUser?.id ?? null,
       });
 
     if (orgError) {

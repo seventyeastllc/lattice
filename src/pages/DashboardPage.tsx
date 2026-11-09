@@ -145,6 +145,22 @@ export default function DashboardPage() {
     retry: false,
   });
 
+  const { data: myOrg } = useQuery({
+    queryKey: ["my_org", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("organizations")
+        .select("id,name,org_type,county,membership_tier,is_active,is_verified")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!user,
+    networkMode: "always",
+    retry: false,
+  });
+
   const displayName = user?.user_metadata?.full_name ?? user?.email ?? "there";
   const firstName   = typeof displayName === "string" ? displayName.split(" ")[0] : displayName;
 
@@ -274,6 +290,32 @@ export default function DashboardPage() {
             </p>
           </div>
         </div>
+
+        {/* Your Organization */}
+        {myOrg && (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${TEAL}`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
+            <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.75rem" }}>Your Organization</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+              <div>
+                <p style={{ fontWeight: 700, fontSize: "1rem", color: TEXT, margin: "0 0 0.25rem" }}>{myOrg.name}</p>
+                <p style={{ fontSize: "0.8125rem", color: MUTED, margin: 0 }}>
+                  {ORG_TYPE_LABELS[myOrg.org_type ?? ""] ?? myOrg.org_type ?? "—"}
+                  {myOrg.county ? ` · ${myOrg.county} County` : ""}
+                  {myOrg.membership_tier ? ` · ${myOrg.membership_tier.charAt(0).toUpperCase() + myOrg.membership_tier.slice(1)} tier` : ""}
+                </p>
+              </div>
+              <span style={{
+                backgroundColor: myOrg.is_active ? "#ECFDF5" : "#FEF3C7",
+                color: myOrg.is_active ? SAGE : "#92400E",
+                fontSize: "0.75rem", fontWeight: 600,
+                padding: "0.2rem 0.6rem", borderRadius: "9999px",
+                textTransform: "uppercase", letterSpacing: "0.04em",
+              }}>
+                {myOrg.is_active ? "Active" : "Pending approval"}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Workspace nav cards */}
         <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: TEXT, marginBottom: "1.25rem" }}>My Workspace</h2>
