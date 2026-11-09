@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     .select(`
       id, name, org_type, county, description, website,
       membership_tier, last_confirmed_at, last_login_confirm_at,
-      services:org_services(name, category),
+      services(name, category),
       contacts(full_name, title, email, phone, is_primary)
     `)
     .eq("is_active", true)
