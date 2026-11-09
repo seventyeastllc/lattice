@@ -46,10 +46,7 @@ interface PrmLead {
   state: string | null;
   zip: string | null;
   website: string | null;
-  follow_up_notes: string | null;
-  partnership_status: string | null;
   promoted_to_directory: boolean;
-  claimed_by_email: string | null;
   claim_status: string | null;
 }
 
@@ -249,10 +246,9 @@ function ClaimSearchStep({ onClaim, onNew }: {
       setLoading(true);
       const { data } = await supabase
         .from("prm_leads")
-        .select("record_id,org_name,county,primary_category,contact_name,contact_title,main_phone,direct_phone,email,street_address,city,state,zip,website,follow_up_notes,partnership_status,promoted_to_directory,claimed_by_email,claim_status")
+        .select("record_id,org_name,county,primary_category,contact_name,contact_title,main_phone,direct_phone,email,street_address,city,state,zip,website,promoted_to_directory,claim_status")
         .or(`org_name.ilike.%${q}%,email.ilike.%${q}%,contact_name.ilike.%${q}%,county.ilike.%${q}%`)
-        .not("partnership_status", "eq", "Do Not Contact")
-        .not("claim_status", "eq", "approved")
+        .or("claim_status.is.null,claim_status.neq.approved")
         .order("org_name")
         .limit(8);
       setResults((data as PrmLead[]) ?? []);
