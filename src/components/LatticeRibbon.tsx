@@ -51,6 +51,16 @@ export default function LatticeRibbon() {
       />
 
 
+      {/* Deep-blue lower ribbon */}
+      <path
+        d="M 1710 560 C 1430 650, 1340 820, 1050 900 S 590 1040, 250 1140"
+        fill="none"
+        stroke="#006B91"
+        strokeWidth="145"
+        strokeLinecap="butt"
+        opacity="0.97"
+      />
+
       {/* Translucent crossing highlight */}
       <path
         d="M 1680 195 C 1440 300, 1310 490, 1130 660"

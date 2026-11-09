@@ -95,16 +95,12 @@ function Skeleton({ h = "1rem", w = "100%", mb = "0" }: { h?: string; w?: string
 // ─── Supabase query hooks ─────────────────────────────────────────────────────
 
 // Applications: orgs that are not yet active/verified (pending) or !active but verified (rejected)
+// Uses SECURITY DEFINER RPC so payment_status is accessible to admin only
 function useApplications() {
   return useQuery({
     queryKey: ["admin-applications"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select(`id, name, org_type, county, membership_tier, payment_status, description, created_at, is_active, is_verified,
-                 contacts(id, full_name, title, email, phone, is_primary)`)
-        .eq("is_active", false)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("admin_get_pending_orgs");
       if (error) throw error;
       return (data ?? []) as unknown as RawApplication[];
     },
@@ -153,16 +149,12 @@ interface RawRequest {
 }
 
 // All active orgs
+// Uses SECURITY DEFINER RPC so payment_status is accessible to admin only
 function useOrganizations() {
   return useQuery({
     queryKey: ["admin-organizations"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select(`id, name, org_type, county, membership_tier, payment_status, is_verified, is_active, created_at,
-                 contacts(full_name, is_primary)`)
-        .eq("is_active", true)
-        .order("name");
+      const { data, error } = await supabase.rpc("admin_get_active_orgs");
       if (error) throw error;
       return (data ?? []) as unknown as RawOrg[];
     },

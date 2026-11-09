@@ -4,20 +4,21 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FROM = "Lattice Network <team@seedxga.com>";
 const SITE = "https://membership.seedxga.com";
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
-    });
+    return new Response(null, { headers: CORS });
   }
 
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: CORS });
 
   const { email } = await req.json();
-  if (!email) return new Response("Missing email", { status: 400 });
+  if (!email) return new Response("Missing email", { status: 400, headers: CORS });
 
   // Generate a recovery link using the service role admin API
   const linkRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
     console.error("generate_link error:", err);
     return new Response(JSON.stringify({ sent: true }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...CORS },
     });
   }
 
@@ -122,11 +123,11 @@ Deno.serve(async (req) => {
   if (!sendRes.ok) {
     const err = await sendRes.text();
     console.error("Resend error:", err);
-    return new Response(JSON.stringify({ error: err }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: err }), { status: 500, headers: { "Content-Type": "application/json", ...CORS } });
   }
 
   return new Response(JSON.stringify({ sent: true }), {
     status: 200,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json", ...CORS },
   });
 });
