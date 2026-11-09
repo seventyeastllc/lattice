@@ -4,7 +4,7 @@ const RESEND_KEY    = Deno.env.get("RESEND_API_KEY")!;
 const SUPA_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPA_SERVICE  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CONFIRM_URL   = Deno.env.get("CONFIRM_URL") ?? `${SUPA_URL}/functions/v1/confirm-listing`;
-const DASHBOARD_URL = Deno.env.get("DASHBOARD_URL") ?? "https://lattice.seedexchange.org/dashboard";
+const DASHBOARD_URL = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com/dashboard";
 const FROM          = "Lattice Network <team@seedexchange.org>";
 const REPLY_TO      = "team@seedexchange.org";
 

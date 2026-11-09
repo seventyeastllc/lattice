@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const SUPA_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPA_SERVICE  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const DASHBOARD_URL = Deno.env.get("DASHBOARD_URL") ?? "https://lattice.seedexchange.org/dashboard";
+const DASHBOARD_URL = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com/dashboard";
 
 Deno.serve(async (req) => {
   const url   = new URL(req.url);
@@ -118,7 +118,7 @@ function successPage(orgName: string): string {
     <h1>Listing confirmed.</h1>
     <p>Thanks for verifying <strong style="color:#1A2B35;">${orgName}</strong>. Your listing is active for another week and the network can continue connecting with you.</p>
     <p style="font-size:0.8125rem;">Need to update something? Reply to any Lattice email or sign in to your dashboard.</p>
-    <a class="btn" href="https://lattice.seedexchange.org">Back to Lattice</a>
+    <a class="btn" href="https://membership.seedxga.com">Back to Lattice</a>
   `);
 }
 
@@ -127,7 +127,7 @@ function alreadyUsedPage(): string {
     <div class="icon">👍</div>
     <h1>Already confirmed.</h1>
     <p>This link has already been used. Your listing is active — no further action needed.</p>
-    <a class="btn" href="https://lattice.seedexchange.org">Back to Lattice</a>
+    <a class="btn" href="https://membership.seedxga.com">Back to Lattice</a>
   `);
 }
 

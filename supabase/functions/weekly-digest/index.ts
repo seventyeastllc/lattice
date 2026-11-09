@@ -5,7 +5,7 @@ const SUPA_URL     = Deno.env.get("SUPABASE_URL")!;
 const SUPA_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FROM         = "Lattice Network <team@seedexchange.org>";
 const REPLY_TO     = "team@seedexchange.org";
-const DASHBOARD    = "https://lattice.seedexchange.org/dashboard"; // update when deployed
+const DASHBOARD    = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com/dashboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface OrgRow {
