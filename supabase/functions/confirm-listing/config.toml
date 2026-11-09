@@ -1,0 +1,2 @@
+[functions.confirm-listing]
+verify_jwt = false
