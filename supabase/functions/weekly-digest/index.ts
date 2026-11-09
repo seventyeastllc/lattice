@@ -3,8 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const RESEND_KEY   = Deno.env.get("RESEND_API_KEY")!;
 const SUPA_URL     = Deno.env.get("SUPABASE_URL")!;
 const SUPA_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const FROM         = "Lattice Network <team@seedexchange.org>";
-const REPLY_TO     = "team@seedexchange.org";
+const FROM         = "Lattice Network <team@seedxga.com>";
+const REPLY_TO     = "team@seedxga.com";
 const DASHBOARD    = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com/dashboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -239,7 +239,7 @@ function buildEmail(orgName: string, contactName: string, stats: RequestStats, t
       <a href="${DASHBOARD}" style="display:inline-block;background:#1E3A4A;color:#ffffff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.01em;">
         Open your dashboard →
       </a>
-      <div style="font-size:12px;color:#5C7380;margin-top:12px;">Or reply to this email — we're at team@seedexchange.org</div>
+      <div style="font-size:12px;color:#5C7380;margin-top:12px;">Or reply to this email — we're at team@seedxga.com</div>
     </td></tr>
 
     <!-- Footer -->

@@ -5,8 +5,8 @@ const SUPA_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPA_SERVICE  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CONFIRM_URL   = Deno.env.get("CONFIRM_URL") ?? `${SUPA_URL}/functions/v1/confirm-listing`;
 const DASHBOARD_URL = Deno.env.get("DASHBOARD_URL") ?? "https://membership.seedxga.com/dashboard";
-const FROM          = "Lattice Network <team@seedexchange.org>";
-const REPLY_TO      = "team@seedexchange.org";
+const FROM          = "Lattice Network <team@seedxga.com>";
+const REPLY_TO      = "team@seedxga.com";
 
 interface OrgRow {
   id: string;
@@ -310,7 +310,7 @@ function footer(orgName: string): string {
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td style="font-size:11px;color:#5C7380;line-height:1.6;">
           Sent to the primary contact for <strong style="color:#1A2B35;">${orgName}</strong> on Lattice.<br>
-          The Seed Exchange · Northwest Georgia · <a href="mailto:team@seedexchange.org" style="color:#2A9D8F;text-decoration:none;">team@seedexchange.org</a>
+          The Seed Exchange · Northwest Georgia · <a href="mailto:team@seedxga.com" style="color:#2A9D8F;text-decoration:none;">team@seedxga.com</a>
         </td>
       </tr></table>
     </td></tr>`;

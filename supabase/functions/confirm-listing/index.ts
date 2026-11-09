@@ -136,6 +136,6 @@ function errorPage(message: string): string {
     <div class="icon">⚠️</div>
     <h1>Something went wrong.</h1>
     <p>${message}</p>
-    <a class="btn" href="mailto:team@seedexchange.org">Email us at team@seedexchange.org</a>
+    <a class="btn" href="mailto:team@seedxga.com">Email us at team@seedxga.com</a>
   `);
 }
