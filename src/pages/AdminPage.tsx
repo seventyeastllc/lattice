@@ -262,7 +262,7 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing" | "invitations";
 
 function Sidebar({
   view, setView, onSignOut,
@@ -279,6 +279,7 @@ function Sidebar({
     { id: "organizations" as View, label: "Organizations", icon: "🏢", badge: 0 },
     { id: "tse_tasks"     as View, label: "TSE Tasks",     icon: "⚑",  badge: pendingTasks },
     { id: "billing"       as View, label: "Billing",       icon: "💳", badge: 0 },
+    { id: "invitations"   as View, label: "Invitations",   icon: "✉️", badge: 0 },
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
     { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
     { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
@@ -1914,6 +1915,95 @@ function formatCents(cents: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
+interface AdminInvitation {
+  invitation_id: string;
+  org_id: string;
+  org_name: string;
+  location_id: string | null;
+  location_name: string | null;
+  invited_email: string;
+  invited_name: string | null;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  invited_by_email: string | null;
+  token: string;
+}
+
+function InvitationsAdmin() {
+  const { data: invitations = [], isLoading, refetch } = useQuery<AdminInvitation[]>({
+    queryKey: ["admin_invitations"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_get_all_invitations");
+      if (error) throw error;
+      return (data as AdminInvitation[]) ?? [];
+    },
+  });
+
+  const fmtDate = (s: string) => new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const isExpired = (s: string) => new Date(s) < new Date();
+
+  const statusColor = (inv: AdminInvitation) => {
+    if (inv.status === "accepted") return { bg: "#DCFCE7", color: "#166534" };
+    if (inv.status === "pending" && isExpired(inv.expires_at)) return { bg: "#FEE2E2", color: "#991B1B" };
+    if (inv.status === "pending") return { bg: "#FEF9C3", color: "#854D0E" };
+    return { bg: "#F3F4F6", color: "#374151" };
+  };
+
+  const statusLabel = (inv: AdminInvitation) => {
+    if (inv.status === "accepted") return "Accepted";
+    if (inv.status === "pending" && isExpired(inv.expires_at)) return "Expired";
+    if (inv.status === "pending") return "Pending";
+    return inv.status;
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: TEXT, margin: "0 0 0.25rem" }}>Staff Invitations</h2>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>{invitations.length} total · {invitations.filter(i => i.status === "pending" && !isExpired(i.expires_at)).length} pending</p>
+        </div>
+        <button onClick={() => refetch()} style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT, fontSize: "0.8125rem", fontWeight: 600, padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}>Refresh</button>
+      </div>
+      {isLoading && <p style={{ color: MUTED }}>Loading…</p>}
+      {!isLoading && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
+            {["Email", "Organization", "Role", "Status", "Expires"].map(h => (
+              <p key={h} style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
+            ))}
+          </div>
+          {invitations.length === 0 && (
+            <p style={{ padding: "2rem 1.25rem", color: MUTED, textAlign: "center", margin: 0 }}>No invitations yet.</p>
+          )}
+          {invitations.map(inv => {
+            const sc = statusColor(inv);
+            return (
+              <div key={inv.invitation_id} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr", gap: "1rem", padding: "0.9rem 1.25rem", alignItems: "center", borderBottom: `1px solid ${BORDER}` }}>
+                <div>
+                  <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: 0 }}>{inv.invited_email}</p>
+                  {inv.invited_name && <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{inv.invited_name}</p>}
+                </div>
+                <div>
+                  <p style={{ color: TEXT, fontSize: "0.8125rem", margin: 0 }}>{inv.org_name}</p>
+                  {inv.location_name && <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{inv.location_name}</p>}
+                </div>
+                <p style={{ color: MUTED, fontSize: "0.8125rem", margin: 0 }}>{inv.role === "org_admin" ? "Org Admin" : "Staff"}</p>
+                <span style={{ display: "inline-block", background: sc.bg, color: sc.color, fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "4px", whiteSpace: "nowrap" }}>
+                  {statusLabel(inv)}
+                </span>
+                <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{fmtDate(inv.expires_at)}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BillingAdmin() {
   const qc = useQueryClient();
   const { data: orgs = [], isLoading } = useBillingOrgs();
@@ -2229,6 +2319,7 @@ export default function AdminPage() {
     organizations: <Organizations />,
     tse_tasks:     <TseTasks />,
     billing:       <BillingAdmin />,
+    invitations:   <InvitationsAdmin />,
     crm:           <CRMView />,
     knowledge:     <KnowledgeLibrary />,
     announcements: <AnnouncementsAdmin />,

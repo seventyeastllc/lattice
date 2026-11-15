@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
 import { useSavedResources } from "@/hooks/useSavedResources";
@@ -294,6 +294,264 @@ function ListingVerifyModal({ locationId, onClose }: { locationId: string; onClo
   );
 }
 
+interface StaffMember {
+  member_id: string;
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  status: string;
+  joined_at: string | null;
+  orientation_done: boolean;
+  roe_done: boolean;
+  can_use_tools: boolean;
+}
+
+interface SeatCapacity {
+  seats_included: number;
+  extra_seats: number;
+  total_seats: number;
+  seats_used: number;
+  seats_available: number;
+}
+
+function StaffPanel({ orgId, locationId }: { orgId: string; locationId?: string | null }) {
+  const qc = useQueryClient();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState<"staff" | "org_admin">("staff");
+  const [inviteResult, setInviteResult] = useState<{ token: string; link: string } | null>(null);
+  const [inviteErr, setInviteErr] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [removeErr, setRemoveErr] = useState("");
+
+  const { data: staff = [], isLoading } = useQuery<StaffMember[]>({
+    queryKey: ["staff", orgId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("org_get_staff", { p_org_id: orgId });
+      if (error) throw error;
+      return (data as StaffMember[]) ?? [];
+    },
+  });
+
+  const { data: capacity } = useQuery<SeatCapacity | null>({
+    queryKey: ["seat_capacity", locationId],
+    queryFn: async () => {
+      if (!locationId) return null;
+      const { data, error } = await supabase.rpc("get_seat_capacity", { p_location_id: locationId });
+      if (error) throw error;
+      return (data as SeatCapacity[] | null)?.[0] ?? null;
+    },
+    enabled: !!locationId,
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("org_invite_staff", {
+        p_org_id: orgId,
+        p_location_id: locationId ?? null,
+        p_email: inviteEmail,
+        p_role: inviteRole,
+        p_full_name: inviteName || null,
+      });
+      if (error) throw error;
+      const token = data as string;
+      return { token, link: `${window.location.origin}/invite/${token}` };
+    },
+    onSuccess: (result) => {
+      setInviteResult(result);
+      setInviteErr("");
+      qc.invalidateQueries({ queryKey: ["staff", orgId] });
+    },
+    onError: (e: Error) => setInviteErr(e.message),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async ({ memberId, reason }: { memberId: string; reason: string }) => {
+      const { error } = await supabase.rpc("org_remove_staff", {
+        p_member_id: memberId,
+        p_reason: reason,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setRemoveTarget(null);
+      setRemoveReason("");
+      setRemoveErr("");
+      qc.invalidateQueries({ queryKey: ["staff", orgId] });
+    },
+    onError: (e: Error) => setRemoveErr(e.message),
+  });
+
+  const active = staff.filter(s => s.status === "active");
+  const removed = staff.filter(s => s.status === "removed");
+
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${DARK}`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div>
+          <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.2rem" }}>Staff Accounts</p>
+          {capacity && (
+            <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0 }}>
+              {capacity.seats_used} / {capacity.total_seats} seats used
+              {capacity.seats_available <= 0 && <span style={{ color: "#991B1B", fontWeight: 700 }}> · No seats available</span>}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => { setInviteOpen(true); setInviteResult(null); setInviteErr(""); setInviteEmail(""); setInviteName(""); }}
+          disabled={capacity ? capacity.seats_available <= 0 : false}
+          style={{ background: DARK, border: "none", color: "#fff", fontWeight: 600, fontSize: "0.8125rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer", opacity: capacity && capacity.seats_available <= 0 ? 0.5 : 1 }}
+        >
+          + Invite Staff
+        </button>
+      </div>
+
+      {/* Seat meter */}
+      {capacity && (
+        <div style={{ marginBottom: "1rem" }}>
+          <div style={{ height: 6, borderRadius: 3, background: BORDER, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min(100, (capacity.seats_used / capacity.total_seats) * 100)}%`, background: capacity.seats_available <= 0 ? "#DC2626" : TEAL, borderRadius: 3, transition: "width 0.3s" }} />
+          </div>
+          <p style={{ fontSize: "0.72rem", color: MUTED, margin: "0.3rem 0 0" }}>
+            {capacity.seats_included} included + {capacity.extra_seats} purchased
+          </p>
+        </div>
+      )}
+
+      {isLoading && <p style={{ color: MUTED, fontSize: "0.875rem" }}>Loading staff…</p>}
+
+      {!isLoading && active.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {active.map(m => (
+            <div key={m.member_id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.6rem 0.75rem", background: BG, borderRadius: "6px", border: `1px solid ${BORDER}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: 0 }}>{m.full_name ?? m.email}</p>
+                <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{m.email} · {m.role}</p>
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+                {!m.orientation_done && <span style={{ background: "#FEF3C7", color: "#92400E", fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "4px" }}>Orientation pending</span>}
+                {m.orientation_done && !m.roe_done && <span style={{ background: "#FEF3C7", color: "#92400E", fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "4px" }}>ROE pending</span>}
+                {m.can_use_tools && <span style={{ background: "#DCFCE7", color: "#166534", fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "4px" }}>Active</span>}
+                <button
+                  onClick={() => { setRemoveTarget({ id: m.member_id, name: m.full_name ?? m.email }); setRemoveErr(""); setRemoveReason(""); }}
+                  style={{ background: "none", border: `1px solid ${BORDER}`, color: MUTED, fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "4px", cursor: "pointer" }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isLoading && active.length === 0 && (
+        <p style={{ color: MUTED, fontSize: "0.875rem", textAlign: "center", padding: "1rem 0" }}>No active staff yet. Invite your first team member.</p>
+      )}
+
+      {removed.length > 0 && (
+        <details style={{ marginTop: "0.75rem" }}>
+          <summary style={{ color: MUTED, fontSize: "0.78rem", cursor: "pointer" }}>Removed staff ({removed.length})</summary>
+          <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            {removed.map(m => (
+              <div key={m.member_id} style={{ display: "flex", gap: "0.5rem", padding: "0.4rem 0.75rem", background: BG, borderRadius: "5px", fontSize: "0.78rem", color: MUTED, border: `1px solid ${BORDER}` }}>
+                <span style={{ flex: 1 }}>{m.full_name ?? m.email}</span>
+                <span style={{ background: "#FEE2E2", color: "#991B1B", fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "3px" }}>Removed</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* Invite modal */}
+      {inviteOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setInviteOpen(false)}>
+          <div style={{ background: SURFACE, borderRadius: "12px", padding: "2rem", width: "100%", maxWidth: "420px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+              <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: TEXT }}>Invite Staff Member</h3>
+              <button onClick={() => setInviteOpen(false)} style={{ background: "none", border: "none", fontSize: "1.25rem", color: MUTED, cursor: "pointer" }}>✕</button>
+            </div>
+            {inviteResult ? (
+              <div>
+                <p style={{ color: SAGE, fontWeight: 600, marginBottom: "0.75rem" }}>✓ Invitation created</p>
+                <p style={{ fontSize: "0.78rem", color: MUTED, marginBottom: "0.4rem" }}>Share this link with the new staff member:</p>
+                <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.8rem", fontFamily: "monospace", wordBreak: "break-all", marginBottom: "0.75rem" }}>
+                  {inviteResult.link}
+                </div>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(inviteResult.link).catch(() => {}); }}
+                  style={{ width: "100%", background: TEAL, border: "none", color: "#fff", fontWeight: 600, padding: "0.65rem", borderRadius: "6px", cursor: "pointer", marginBottom: "0.5rem" }}
+                >
+                  Copy Link
+                </button>
+                <p style={{ fontSize: "0.72rem", color: MUTED, textAlign: "center", margin: 0 }}>Link expires in 7 days</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, color: TEXT, display: "block", marginBottom: "0.25rem" }}>Email *</label>
+                  <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                    style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, color: TEXT, display: "block", marginBottom: "0.25rem" }}>Full Name (optional)</label>
+                  <input value={inviteName} onChange={e => setInviteName(e.target.value)}
+                    style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, color: TEXT, display: "block", marginBottom: "0.25rem" }}>Role</label>
+                  <select value={inviteRole} onChange={e => setInviteRole(e.target.value as "staff" | "org_admin")}
+                    style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", background: SURFACE, boxSizing: "border-box" }}>
+                    <option value="staff">Staff</option>
+                    <option value="org_admin">Organization Admin</option>
+                  </select>
+                </div>
+                {inviteErr && <p style={{ color: "#991B1B", fontSize: "0.78rem", margin: 0 }}>{inviteErr}</p>}
+                <button
+                  onClick={() => inviteMutation.mutate()}
+                  disabled={inviteMutation.isPending || !inviteEmail}
+                  style={{ background: DARK, border: "none", color: "#fff", fontWeight: 700, padding: "0.75rem", borderRadius: "8px", cursor: "pointer", opacity: !inviteEmail ? 0.5 : 1 }}
+                >
+                  {inviteMutation.isPending ? "Creating invitation…" : "Create Invitation Link"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Remove confirmation modal */}
+      {removeTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setRemoveTarget(null)}>
+          <div style={{ background: SURFACE, borderRadius: "12px", padding: "2rem", width: "100%", maxWidth: "420px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 0.5rem", fontSize: "1rem", fontWeight: 700, color: TEXT }}>Remove Staff Member</h3>
+            <p style={{ color: MUTED, fontSize: "0.875rem", marginBottom: "1rem" }}>
+              Remove <strong>{removeTarget.name}</strong> from your organization? Their historical activity will be preserved.
+            </p>
+            <label style={{ fontSize: "0.78rem", fontWeight: 600, color: TEXT, display: "block", marginBottom: "0.25rem" }}>Reason (optional)</label>
+            <input value={removeReason} onChange={e => setRemoveReason(e.target.value)}
+              placeholder="e.g. No longer with organization"
+              style={{ width: "100%", padding: "0.6rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.9rem", marginBottom: "1rem", boxSizing: "border-box" }} />
+            {removeErr && <p style={{ color: "#991B1B", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{removeErr}</p>}
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button onClick={() => setRemoveTarget(null)} style={{ flex: 1, background: SURFACE, border: `1.5px solid ${BORDER}`, color: TEXT, fontWeight: 600, padding: "0.65rem", borderRadius: "8px", cursor: "pointer" }}>Cancel</button>
+              <button
+                onClick={() => removeMutation.mutate({ memberId: removeTarget.id, reason: removeReason })}
+                disabled={removeMutation.isPending}
+                style={{ flex: 1, background: "#DC2626", border: "none", color: "#fff", fontWeight: 700, padding: "0.65rem", borderRadius: "8px", cursor: "pointer" }}
+              >
+                {removeMutation.isPending ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user, role, signOut } = useAuth();
   const { data: requests = [], isLoading } = useMyRequests();
@@ -545,6 +803,14 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Staff panel — shown when the user owns an org */}
+        {myOrg && (
+          <StaffPanel
+            orgId={myOrg.id}
+            locationId={myLocations && myLocations.length > 0 ? myLocations[0].id : null}
+          />
         )}
 
         {/* Workspace nav cards */}
