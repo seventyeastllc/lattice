@@ -52,12 +52,23 @@ Deno.serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  // Optional test params: restrict to one location and override recipient email
+  let testLocationId: string | null = null;
+  let testEmailOverride: string | null = null;
+  if (req.method === "POST") {
+    try {
+      const body = await req.json().catch(() => ({}));
+      testLocationId   = body.test_location_id   ?? null;
+      testEmailOverride = body.test_email_override ?? null;
+    } catch { /* no body */ }
+  }
+
   const supabase = createClient(SUPA_URL, SUPA_SERVICE, {
     auth: { persistSession: false },
   });
 
-  // Fetch all active, verified locations that are not yet suspended
-  const { data: locations, error } = await supabase
+  // Fetch active, verified locations that are not yet suspended
+  let query = supabase
     .from("locations")
     .select(`
       id, org_id, name, location_type, county,
@@ -70,6 +81,10 @@ Deno.serve(async (req) => {
     .eq("is_active", true)
     .eq("is_verified", true)
     .not("listing_status", "eq", "suspended");
+
+  if (testLocationId) query = query.eq("id", testLocationId);
+
+  const { data: locations, error } = await query;
 
   if (error) {
     console.error(error);
@@ -208,9 +223,9 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         from:     FROM,
-        to:       [primary.email],
+        to:       [testEmailOverride ?? primary.email],
         reply_to: REPLY_TO,
-        subject:  emailSubject,
+        subject:  testEmailOverride ? `[TEST] ${emailSubject}` : emailSubject,
         html,
       }),
     });
