@@ -262,7 +262,7 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing";
 
 function Sidebar({
   view, setView, onSignOut,
@@ -278,6 +278,7 @@ function Sidebar({
     { id: "requests"      as View, label: "Requests",      icon: "🔗", badge: pendingReqs },
     { id: "organizations" as View, label: "Organizations", icon: "🏢", badge: 0 },
     { id: "tse_tasks"     as View, label: "TSE Tasks",     icon: "⚑",  badge: pendingTasks },
+    { id: "billing"       as View, label: "Billing",       icon: "💳", badge: 0 },
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
     { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
     { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
@@ -1823,6 +1824,389 @@ function TseTasks() {
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+interface BillingLineItem {
+  location_id: string;
+  location_name: string;
+  sequence: number;
+  base_annual_cents: number;
+  discount_pct: number;
+  location_annual_cents: number;
+  extra_staff_seats: number;
+  staff_seat_annual_cents: number;
+  line_total_cents: number;
+}
+
+interface BillingPayment {
+  id: string;
+  amount_cents: number;
+  payment_method: string;
+  reference: string | null;
+  memo: string | null;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  created_at: string;
+}
+
+interface ServiceAllowance {
+  id: string;
+  location_id: string;
+  allowance_type: string;
+  membership_year: number;
+  annual_amount: number;
+  used_amount: number;
+  remaining: number;
+  year_start: string;
+  year_end: string;
+  expired_at: string | null;
+  carry_over: number | null;
+}
+
+interface OrgBillingSummary {
+  org: {
+    id: string; name: string; tier: string | null;
+    renewal_date: string | null; payment_status: string | null;
+    is_founding_member: boolean; rate_protection_end_date: string | null;
+    protected_tier_price_cents: number | null;
+  };
+  annual_total_cents: number;
+  line_items: BillingLineItem[];
+  payments: BillingPayment[];
+  service_allowances: ServiceAllowance[];
+  pending_change: { change_type: string; new_tier: string | null; change_notes: string | null } | null;
+}
+
+interface BillingOrg {
+  id: string; name: string; tier: string | null; renewal_date: string | null;
+  payment_status: string | null; is_founding_member: boolean;
+  rate_protection_end_date: string | null;
+}
+
+function useBillingOrgs() {
+  return useQuery({
+    queryKey: ["billing-orgs"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id, name, tier, renewal_date, payment_status, is_founding_member, rate_protection_end_date")
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as BillingOrg[];
+    },
+  });
+}
+
+function useOrgBilling(orgId: string | null) {
+  return useQuery({
+    queryKey: ["org-billing", orgId],
+    queryFn: async () => {
+      if (!orgId) return null;
+      const { data, error } = await supabase.rpc("admin_get_org_billing", { p_org_id: orgId });
+      if (error) throw error;
+      return data as unknown as OrgBillingSummary;
+    },
+    enabled: !!orgId,
+  });
+}
+
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+}
+
+function BillingAdmin() {
+  const qc = useQueryClient();
+  const { data: orgs = [], isLoading } = useBillingOrgs();
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const { data: billing, isLoading: loadingBilling } = useOrgBilling(selectedOrgId);
+
+  const [payAmt, setPayAmt]       = useState("");
+  const [payMethod, setPayMethod] = useState("check");
+  const [payRef, setPayRef]       = useState("");
+  const [payMemo, setPayMemo]     = useState("");
+  const [payError, setPayError]   = useState("");
+
+  const recordPayment = useMutation({
+    mutationFn: async () => {
+      if (!selectedOrgId) return;
+      const cents = Math.round(parseFloat(payAmt) * 100);
+      if (isNaN(cents) || cents <= 0) throw new Error("Enter a valid amount");
+      const { error } = await supabase.rpc("admin_record_payment", {
+        p_org_id: selectedOrgId,
+        p_amount_cents: cents,
+        p_payment_method: payMethod,
+        p_reference: payRef || null,
+        p_memo: payMemo || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      qc.invalidateQueries({ queryKey: ["billing-orgs"] });
+      setPayAmt(""); setPayRef(""); setPayMemo(""); setPayError("");
+    },
+    onError: (e: Error) => setPayError(e.message),
+  });
+
+  const setFounderProtection = useMutation({
+    mutationFn: async (orgId: string) => {
+      const { error } = await supabase.rpc("admin_set_founder_protection", { p_org_id: orgId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      qc.invalidateQueries({ queryKey: ["billing-orgs"] });
+    },
+  });
+
+  const queueDowngrade = useMutation({
+    mutationFn: async ({ orgId, tier }: { orgId: string; tier: string }) => {
+      const { error } = await supabase.rpc("admin_queue_tier_downgrade", { p_org_id: orgId, p_new_tier: tier });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] }),
+  });
+
+  return (
+    <div style={{ display: "flex", gap: "1.5rem", alignItems: "flex-start" }}>
+      {/* Org list */}
+      <div style={{ width: 280, flexShrink: 0 }}>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 1rem" }}>Billing</h1>
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+          {isLoading && [1,2,3].map(i => <div key={i} style={{ padding: "0.75rem 1rem", borderBottom: `1px solid ${BORDER}` }}><Skeleton /></div>)}
+          {orgs.map(org => {
+            const active = org.id === selectedOrgId;
+            const hasRenewal = !!org.renewal_date;
+            const overdue = hasRenewal && new Date(org.renewal_date!) < new Date();
+            return (
+              <button
+                key={org.id}
+                onClick={() => setSelectedOrgId(org.id)}
+                style={{ width: "100%", textAlign: "left", padding: "0.75rem 1rem", borderBottom: `1px solid ${BORDER}`, background: active ? `${TEAL}15` : SURFACE, border: "none", borderLeft: active ? `3px solid ${TEAL}` : "3px solid transparent", cursor: "pointer" }}
+              >
+                <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.8125rem", margin: "0 0 0.15rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{org.name}</p>
+                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                  {org.tier && <span style={{ fontSize: "0.68rem", color: TIER_COLORS[org.tier] ?? MUTED, fontWeight: 600 }}>{TIER_LABELS[org.tier] ?? org.tier}</span>}
+                  {org.is_founding_member && <span style={{ fontSize: "0.65rem", background: "#FEF3C7", color: "#92400E", fontWeight: 700, padding: "0 0.3rem", borderRadius: "3px" }}>Founder</span>}
+                  {overdue && <span style={{ fontSize: "0.65rem", background: "#FEE2E2", color: "#991B1B", fontWeight: 700, padding: "0 0.3rem", borderRadius: "3px" }}>Overdue</span>}
+                </div>
+              </button>
+            );
+          })}
+          {!isLoading && orgs.length === 0 && <p style={{ color: MUTED, fontSize: "0.875rem", padding: "1rem" }}>No organizations.</p>}
+        </div>
+      </div>
+
+      {/* Detail panel */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {!selectedOrgId && (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "3rem", textAlign: "center", color: MUTED }}>
+            Select an organization to view billing details.
+          </div>
+        )}
+
+        {selectedOrgId && loadingBilling && <Skeleton h="400px" />}
+
+        {selectedOrgId && billing && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            {/* Header */}
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+                <div>
+                  <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: TEXT, margin: "0 0 0.3rem" }}>{billing.org.name}</h2>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                    {billing.org.tier && (
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: TIER_COLORS[billing.org.tier] ?? MUTED }}>
+                        {TIER_LABELS[billing.org.tier] ?? billing.org.tier}
+                      </span>
+                    )}
+                    {billing.org.is_founding_member && (
+                      <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "3px" }}>
+                        Founder · protected until {billing.org.rate_protection_end_date}
+                      </span>
+                    )}
+                    {billing.pending_change && (
+                      <span style={{ fontSize: "0.68rem", background: "#FEE2E2", color: "#991B1B", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "3px" }}>
+                        Pending: {billing.pending_change.change_type} → {billing.pending_change.new_tier}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: 0 }}>{formatCents(billing.annual_total_cents)}/yr</p>
+                  <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0.1rem 0 0" }}>
+                    Renewal: {billing.org.renewal_date ?? "not set"} · {billing.org.payment_status}
+                  </p>
+                </div>
+              </div>
+
+              {!billing.org.is_founding_member && billing.org.tier && (
+                <button
+                  onClick={() => setFounderProtection.mutate(billing.org.id)}
+                  disabled={setFounderProtection.isPending}
+                  style={{ marginTop: "0.75rem", fontSize: "0.78rem", background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", borderRadius: "5px", padding: "0.35rem 0.9rem", cursor: "pointer", fontWeight: 600 }}
+                >
+                  {setFounderProtection.isPending ? "Setting…" : "Set 2-year founder protection"}
+                </button>
+              )}
+
+              {billing.org.tier && billing.org.tier !== "collaborator" && (
+                <button
+                  onClick={() => queueDowngrade.mutate({ orgId: billing.org.id, tier: "collaborator" })}
+                  disabled={queueDowngrade.isPending || !!billing.pending_change}
+                  style={{ marginTop: "0.75rem", marginLeft: "0.5rem", fontSize: "0.78rem", background: BG, color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.35rem 0.9rem", cursor: "pointer" }}
+                >
+                  Queue downgrade to Collaborator
+                </button>
+              )}
+            </div>
+
+            {/* Line items */}
+            {billing.line_items.length > 0 && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+                <div style={{ padding: "0.75rem 1.25rem", borderBottom: `1px solid ${BORDER}`, background: BG }}>
+                  <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.8125rem", margin: 0 }}>Annual Invoice Breakdown</p>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <thead>
+                    <tr style={{ background: BG }}>
+                      {["Location", "Seq", "Base/yr", "Disc", "Loc Price", "Extra Seats", "Line Total"].map(h => (
+                        <th key={h} style={{ textAlign: h === "Location" ? "left" : "right", padding: "0.5rem 0.75rem", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: MUTED, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billing.line_items.map(li => (
+                      <tr key={li.location_id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                        <td style={{ padding: "0.6rem 0.75rem", color: TEXT, fontWeight: 500 }}>{li.location_name}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", color: MUTED, textAlign: "right" }}>{li.sequence}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>{formatCents(li.base_annual_cents)}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", color: li.discount_pct > 0 ? "#166534" : MUTED }}>{li.discount_pct > 0 ? `-${li.discount_pct}%` : "—"}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>{formatCents(li.location_annual_cents)}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", color: MUTED }}>{li.extra_staff_seats > 0 ? `${li.extra_staff_seats} × ${formatCents(li.staff_seat_annual_cents)}` : "—"}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", fontWeight: 700, color: TEXT }}>{formatCents(li.line_total_cents)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: BG }}>
+                      <td colSpan={6} style={{ padding: "0.6rem 0.75rem", fontWeight: 700, color: TEXT, textAlign: "right" }}>Total</td>
+                      <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", fontWeight: 700, color: TEXT }}>{formatCents(billing.annual_total_cents)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {billing.org.is_founding_member && billing.org.rate_protection_end_date && new Date(billing.org.rate_protection_end_date) > new Date() && (
+                  <p style={{ fontSize: "0.73rem", color: "#92400E", background: "#FFFBEB", padding: "0.5rem 1.25rem", margin: 0 }}>
+                    ★ Founder rate lock in effect until {billing.org.rate_protection_end_date}. Prices show locked rates, not current list prices.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Service allowances */}
+            {billing.service_allowances.length > 0 && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+                <div style={{ padding: "0.75rem 1.25rem", borderBottom: `1px solid ${BORDER}`, background: BG }}>
+                  <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.8125rem", margin: 0 }}>Service Allowances</p>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+                  <thead>
+                    <tr>
+                      {["Location", "Year", "Type", "Annual", "Used", "Remaining", "Period", "Status"].map(h => (
+                        <th key={h} style={{ textAlign: h === "Location" ? "left" : "right", padding: "0.5rem 0.75rem", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: MUTED, borderBottom: `1px solid ${BORDER}`, background: BG }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billing.service_allowances.map(sa => {
+                      const loc = billing.line_items.find(l => l.location_id === sa.location_id);
+                      return (
+                        <tr key={sa.id} style={{ borderBottom: `1px solid ${BORDER}`, opacity: sa.expired_at ? 0.55 : 1 }}>
+                          <td style={{ padding: "0.5rem 0.75rem", color: TEXT, fontSize: "0.75rem" }}>{loc?.location_name ?? sa.location_id.slice(0, 8)}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: MUTED }}>{sa.membership_year}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: MUTED }}>{sa.allowance_type}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{sa.annual_amount}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{sa.used_amount}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", fontWeight: 700, color: Number(sa.remaining) < 2 ? "#991B1B" : "#166534" }}>{sa.remaining}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", fontSize: "0.72rem", color: MUTED }}>{sa.year_start} – {sa.year_end}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>
+                            {sa.expired_at ? <span style={{ fontSize: "0.68rem", color: MUTED, background: "#F3F4F6", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>Expired</span>
+                              : sa.carry_over ? <span style={{ fontSize: "0.68rem", color: "#166534" }}>Carry-over: {sa.carry_over}</span>
+                              : <span style={{ fontSize: "0.68rem", color: "#166534", background: "#DCFCE7", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>Active</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Record payment */}
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
+              <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.875rem" }}>Record Payment</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0.75rem", alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Amount (USD)</label>
+                  <input value={payAmt} onChange={e => setPayAmt(e.target.value)} placeholder="2400.00"
+                    style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Method</label>
+                  <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+                    style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem" }}>
+                    <option value="check">Check</option>
+                    <option value="ach">ACH</option>
+                    <option value="card">Card</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Reference #</label>
+                  <input value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="Check #1234"
+                    style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Memo</label>
+                  <input value={payMemo} onChange={e => setPayMemo(e.target.value)} placeholder="FY2027 membership"
+                    style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              {payError && <p style={{ color: "#991B1B", fontSize: "0.78rem", marginTop: "0.5rem" }}>{payError}</p>}
+              <button
+                onClick={() => recordPayment.mutate()}
+                disabled={recordPayment.isPending || !payAmt}
+                style={{ marginTop: "0.75rem", background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.6rem 1.5rem", borderRadius: "7px", cursor: "pointer", opacity: !payAmt ? 0.5 : 1 }}
+              >
+                {recordPayment.isPending ? "Recording…" : "Record payment"}
+              </button>
+            </div>
+
+            {/* Payment history */}
+            {billing.payments.length > 0 && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+                <div style={{ padding: "0.75rem 1.25rem", borderBottom: `1px solid ${BORDER}`, background: BG }}>
+                  <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.8125rem", margin: 0 }}>Payment History</p>
+                </div>
+                {billing.payments.map(p => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem 1.25rem", borderBottom: `1px solid ${BORDER}`, fontSize: "0.8125rem" }}>
+                    <div>
+                      <span style={{ fontWeight: 600, color: TEXT }}>{formatCents(p.amount_cents)}</span>
+                      <span style={{ color: MUTED, marginLeft: "0.5rem" }}>{p.payment_method}</span>
+                      {p.reference && <span style={{ color: MUTED, marginLeft: "0.5rem" }}>· {p.reference}</span>}
+                      {p.memo && <span style={{ color: MUTED, marginLeft: "0.5rem" }}>— {p.memo}</span>}
+                    </div>
+                    <span style={{ color: MUTED, fontSize: "0.75rem" }}>{new Date(p.created_at).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [view, setView] = useState<View>("overview");
   const { signOut } = useAuth();
@@ -1844,6 +2228,7 @@ export default function AdminPage() {
     requests:      <ConnectionRequests />,
     organizations: <Organizations />,
     tse_tasks:     <TseTasks />,
+    billing:       <BillingAdmin />,
     crm:           <CRMView />,
     knowledge:     <KnowledgeLibrary />,
     announcements: <AnnouncementsAdmin />,
