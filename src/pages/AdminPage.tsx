@@ -85,6 +85,27 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ─── LocationCount ────────────────────────────────────────────────────────────
+function LocationCount({ orgId }: { orgId: string }) {
+  const { data } = useQuery({
+    queryKey: ["admin-locations-count", orgId],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("locations")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", orgId);
+      return count ?? 0;
+    },
+    staleTime: 60_000,
+  });
+  if (!data || data === 0) return null;
+  return (
+    <span style={{ fontSize: "0.68rem", color: MUTED, marginTop: "0.15rem", display: "block" }}>
+      {data} location{data !== 1 ? "s" : ""}
+    </span>
+  );
+}
+
 // ─── Loading skeleton ─────────────────────────────────────────────────────────
 function Skeleton({ h = "1rem", w = "100%", mb = "0" }: { h?: string; w?: string; mb?: string }) {
   return (
@@ -118,8 +139,17 @@ interface RawApplication {
   created_at: string;
   is_active: boolean;
   is_verified: boolean;
+  verification_call_notes: string | null;
+  verification_call_at: string | null;
+  agreement_signed_at: string | null;
+  payment_requested_at: string | null;
+  activated_at: string | null;
   contacts: { id: string; full_name: string; title: string | null; email: string | null; phone: string | null; is_primary: boolean }[];
 }
+
+// Configurable booking links (set via env or admin)
+const BOOKING_LINK_VERIFICATION   = import.meta.env.VITE_BOOKING_LINK_VERIFICATION   ?? "";
+const BOOKING_LINK_IMPLEMENTATION = import.meta.env.VITE_BOOKING_LINK_IMPLEMENTATION ?? "";
 
 // Connection requests: all, joined to org name
 function useConnectionRequests() {
@@ -232,14 +262,14 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "crm" | "knowledge" | "announcements";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements";
 
 function Sidebar({
   view, setView, onSignOut,
-  pendingApps, pendingReqs, pendingClaims,
+  pendingApps, pendingReqs, pendingClaims, pendingTasks,
 }: {
   view: View; setView: (v: View) => void; onSignOut: () => void;
-  pendingApps: number; pendingReqs: number; pendingClaims: number;
+  pendingApps: number; pendingReqs: number; pendingClaims: number; pendingTasks: number;
 }) {
   const navItems = [
     { id: "overview"      as View, label: "Overview",      icon: "◈",  badge: 0 },
@@ -247,6 +277,7 @@ function Sidebar({
     { id: "claims"        as View, label: "Claim Queue",   icon: "🔖", badge: pendingClaims },
     { id: "requests"      as View, label: "Requests",      icon: "🔗", badge: pendingReqs },
     { id: "organizations" as View, label: "Organizations", icon: "🏢", badge: 0 },
+    { id: "tse_tasks"     as View, label: "TSE Tasks",     icon: "⚑",  badge: pendingTasks },
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
     { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
     { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
@@ -381,73 +412,404 @@ function Overview({ setView }: { setView: (v: View) => void }) {
 }
 
 // ─── Applications ─────────────────────────────────────────────────────────────
+function appStage(app: RawApplication): "submitted" | "verified" | "agreement" | "payment_requested" | "paid" | "rejected" {
+  if (app.is_verified && app.is_active) return "paid"; // shouldn't appear here but guard
+  if (app.is_verified && !app.is_active && app.payment_status === "paid") return "paid";
+  if (app.is_verified && !app.is_active && app.payment_requested_at) return "payment_requested";
+  if (app.is_verified && !app.is_active && app.agreement_signed_at) return "agreement";
+  if (app.is_verified && !app.is_active) return "verified";
+  return "submitted";
+}
+
+const STAGE_LABELS: Record<string, { label: string; color: string }> = {
+  submitted:         { label: "Submitted",         color: "#854D0E" },
+  verified:          { label: "Verification done", color: "#1E40AF" },
+  agreement:         { label: "Agreement signed",  color: "#7C3AED" },
+  payment_requested: { label: "Payment requested", color: "#C8622A" },
+  paid:              { label: "Ready to activate", color: SAGE },
+  rejected:          { label: "Rejected",          color: "#991B1B" },
+};
+
+function AppWorkflowPanel({ app, qc }: { app: RawApplication; qc: ReturnType<typeof useQueryClient> }) {
+  const stage = appStage(app);
+  const primary = app.contacts.find(c => c.is_primary) ?? app.contacts[0];
+  const [callNotes, setCallNotes] = useState(app.verification_call_notes ?? "");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["admin-applications"] });
+    qc.invalidateQueries({ queryKey: ["admin-organizations"] });
+  };
+
+  // Stage mutations
+  const verifyMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations").update({
+        is_verified: true,
+        is_active: false,
+        verification_call_at: new Date().toISOString(),
+        verification_call_notes: callNotes || null,
+      }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const agreementMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations")
+        .update({ agreement_signed_at: new Date().toISOString() }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const requestPaymentMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations")
+        .update({ payment_requested_at: new Date().toISOString() }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations")
+        .update({ payment_status: "paid" }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("admin_activate_org", { p_org_id: app.id });
+      if (error) throw error;
+    },
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["directory"] }); },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations")
+        .update({ is_active: false, is_verified: true }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  const revertMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("organizations")
+        .update({ is_active: false, is_verified: false }).eq("id", app.id);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    await supabase.from("organizations").update({ verification_call_notes: callNotes || null }).eq("id", app.id);
+    setSavingNotes(false);
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 2000);
+  }
+
+  const paymentLink = STRIPE_LINKS[app.membership_tier ?? ""];
+
+  return (
+    <div style={{ borderTop: `1px solid ${BORDER}`, background: BG }}>
+      {/* Contact + description */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", padding: "1.25rem 1.25rem 0" }}>
+        <div>
+          <p style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED, margin: "0 0 0.5rem" }}>Description</p>
+          <p style={{ fontSize: "0.8125rem", color: TEXT, lineHeight: 1.6, margin: 0 }}>{app.description ?? "—"}</p>
+        </div>
+        {primary && (
+          <div>
+            <p style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED, margin: "0 0 0.5rem" }}>Primary Contact</p>
+            <p style={{ fontSize: "0.875rem", color: TEXT, fontWeight: 600, margin: "0 0 0.1rem" }}>{primary.full_name}</p>
+            {primary.title && <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.2rem" }}>{primary.title}</p>}
+            {primary.email && <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.1rem" }}>{primary.email}</p>}
+            {primary.phone && <p style={{ fontSize: "0.78rem", color: TEXT, margin: 0 }}>{primary.phone}</p>}
+          </div>
+        )}
+      </div>
+
+      {/* ── Stage 1: Submitted → verification call ───────────────────────────── */}
+      <div style={{ padding: "1.25rem" }}>
+        <WorkflowStage
+          number={1} label="Verification call"
+          done={!!app.verification_call_at}
+          active={stage === "submitted"}
+          doneAt={app.verification_call_at}
+        >
+          {stage === "submitted" && (
+            <>
+              {BOOKING_LINK_VERIFICATION && (
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <a href={BOOKING_LINK_VERIFICATION} target="_blank" rel="noreferrer"
+                    style={{ fontSize: "0.8rem", color: TEAL, fontWeight: 600, textDecoration: "none" }}>
+                    Open booking calendar ↗
+                  </a>
+                </div>
+              )}
+              <textarea
+                value={callNotes}
+                onChange={e => { setCallNotes(e.target.value); setNotesSaved(false); }}
+                placeholder="Verification call notes — who was on the call, what was discussed, any flags or additional checks needed…"
+                style={{ width: "100%", boxSizing: "border-box", minHeight: 80, padding: "0.625rem 0.75rem", border: `1.5px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.8125rem", color: TEXT, fontFamily: "inherit", resize: "vertical", marginBottom: "0.75rem" }}
+              />
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <button onClick={saveNotes} disabled={savingNotes}
+                  style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.78rem", padding: "0.4rem 0.875rem", borderRadius: "6px", cursor: "pointer" }}>
+                  {notesSaved ? "✓ Saved" : savingNotes ? "Saving…" : "Save notes"}
+                </button>
+                <button onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending}
+                  style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.5rem 1.25rem", borderRadius: "6px", cursor: "pointer" }}>
+                  {verifyMutation.isPending ? "Marking…" : "✓ Mark verification complete"}
+                </button>
+                <button onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending}
+                  style={{ marginLeft: "auto", background: SURFACE, border: "1.5px solid #FECACA", color: "#B91C1C", fontWeight: 600, fontSize: "0.78rem", padding: "0.4rem 0.875rem", borderRadius: "6px", cursor: "pointer" }}>
+                  Reject application
+                </button>
+              </div>
+            </>
+          )}
+          {app.verification_call_notes && stage !== "submitted" && (
+            <p style={{ fontSize: "0.78rem", color: MUTED, fontStyle: "italic", margin: 0 }}>{app.verification_call_notes}</p>
+          )}
+        </WorkflowStage>
+
+        {/* ── Stage 2: Agreement signed ──────────────────────────────────────── */}
+        <WorkflowStage
+          number={2} label="Signed agreement"
+          done={!!app.agreement_signed_at}
+          active={stage === "verified"}
+          doneAt={app.agreement_signed_at}
+        >
+          {stage === "verified" && (
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0, flex: 1 }}>
+                Send the annual membership agreement to {primary?.email ?? "the primary contact"} for signature. Mark as signed once returned.
+              </p>
+              <button onClick={() => agreementMutation.mutate()} disabled={agreementMutation.isPending}
+                style={{ background: DARK, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.5rem 1.25rem", borderRadius: "6px", cursor: "pointer", flexShrink: 0 }}>
+                {agreementMutation.isPending ? "Saving…" : "✓ Agreement signed"}
+              </button>
+            </div>
+          )}
+        </WorkflowStage>
+
+        {/* ── Stage 3: Payment request ───────────────────────────────────────── */}
+        <WorkflowStage
+          number={3} label="Annual payment"
+          done={app.payment_status === "paid" || app.payment_status === "exempt"}
+          active={stage === "agreement"}
+          doneAt={app.payment_status === "paid" ? app.payment_requested_at : null}
+        >
+          {stage === "agreement" && (
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              {paymentLink ? (
+                <button onClick={() => { navigator.clipboard.writeText(paymentLink); requestPaymentMutation.mutate(); }}
+                  style={{ background: DARK, color: "#fff", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1rem", border: "none", borderRadius: "6px", cursor: "pointer" }}>
+                  Copy &amp; send payment link
+                </button>
+              ) : (
+                <span style={{ fontSize: "0.78rem", color: MUTED, fontStyle: "italic" }}>
+                  Set VITE_STRIPE_LINK_{(app.membership_tier ?? "").toUpperCase()} to enable payment link copying.
+                </span>
+              )}
+              <button onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending}
+                style={{ background: SURFACE, border: "1.5px solid #A7F3D0", color: "#065F46", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
+                {markPaidMutation.isPending ? "Saving…" : "✓ Confirm payment received"}
+              </button>
+            </div>
+          )}
+          {stage === "payment_requested" && (
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+              <p style={{ fontSize: "0.78rem", color: "#C8622A", margin: 0 }}>Payment link sent — awaiting confirmation.</p>
+              <button onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending}
+                style={{ background: "#065F46", border: "none", color: "#fff", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}>
+                {markPaidMutation.isPending ? "Saving…" : "✓ Confirm payment received"}
+              </button>
+            </div>
+          )}
+        </WorkflowStage>
+
+        {/* ── Stage 4: Activate ──────────────────────────────────────────────── */}
+        <WorkflowStage
+          number={4} label="Activate access"
+          done={app.is_active}
+          active={stage === "paid"}
+          doneAt={app.activated_at}
+        >
+          {stage === "paid" && (
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0, flex: 1 }}>
+                Activating will enable directory + coordination access, start the 12-month term, set the renewal date, and create implementation session placeholders.
+              </p>
+              <button onClick={() => activateMutation.mutate()} disabled={activateMutation.isPending}
+                style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.9375rem", padding: "0.6rem 1.5rem", borderRadius: "7px", cursor: "pointer", flexShrink: 0 }}>
+                {activateMutation.isPending ? "Activating…" : "🚀 Activate organization"}
+              </button>
+            </div>
+          )}
+        </WorkflowStage>
+
+        {/* ── Stage 5: Implementation sessions ──────────────────────────────── */}
+        <WorkflowStage
+          number={5} label="Implementation sessions"
+          done={false}
+          active={app.is_active}
+        >
+          {app.is_active && (
+            <div>
+              <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.5rem" }}>
+                Schedule two 90-minute cohort onboarding sessions, one week apart.
+                {BOOKING_LINK_IMPLEMENTATION && <> <a href={BOOKING_LINK_IMPLEMENTATION} target="_blank" rel="noreferrer" style={{ color: TEAL, fontWeight: 600, textDecoration: "none" }}>Open scheduling calendar ↗</a></>}
+              </p>
+              <ImplSessions orgId={app.id} />
+            </div>
+          )}
+        </WorkflowStage>
+
+        {/* Reset */}
+        <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={() => revertMutation.mutate()} disabled={revertMutation.isPending}
+            style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.75rem", padding: "0.35rem 0.875rem", borderRadius: "6px", cursor: "pointer" }}>
+            Reset to submitted
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowStage({ number, label, done, active, doneAt, children }: {
+  number: number; label: string; done: boolean; active: boolean; doneAt?: string | null; children?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", paddingBottom: "1rem", borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          background: done ? TEAL : active ? DARK : BORDER,
+          color: done || active ? "#fff" : MUTED,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "0.75rem", fontWeight: 700,
+        }}>
+          {done ? "✓" : number}
+        </div>
+        <div style={{ flex: 1, width: 2, background: done ? TEAL : BORDER, margin: "4px 0 0" }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, paddingBottom: "0.25rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: children ? "0.625rem" : 0 }}>
+          <p style={{ fontWeight: 700, fontSize: "0.875rem", color: done ? TEAL : active ? TEXT : MUTED, margin: 0 }}>{label}</p>
+          {done && doneAt && <span style={{ fontSize: "0.68rem", color: MUTED }}>{fmt(doneAt)}</span>}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ImplSessions({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  interface ImplSession { id: string; session_number: number; scheduled_at: string | null; calendar_link: string | null; notes: string | null; completed_at: string | null }
+  const { data: sessions = [] } = useQuery<ImplSession[]>({
+    queryKey: ["impl-sessions", orgId],
+    queryFn: async () => {
+      const { data } = await supabase.from("implementation_sessions").select("*").eq("org_id", orgId).order("session_number");
+      return (data ?? []) as ImplSession[];
+    },
+    staleTime: 30_000,
+  });
+
+  async function saveSession(id: string, patch: Partial<ImplSession>) {
+    await supabase.from("implementation_sessions").update(patch).eq("id", id);
+    qc.invalidateQueries({ queryKey: ["impl-sessions", orgId] });
+  }
+
+  if (sessions.length === 0) {
+    return <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0, fontStyle: "italic" }}>Session records will appear here after activation.</p>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      {sessions.map(s => (
+        <SessionRow key={s.id} session={s} onSave={patch => saveSession(s.id, patch)} />
+      ))}
+    </div>
+  );
+}
+
+function SessionRow({ session, onSave }: {
+  session: { id: string; session_number: number; scheduled_at: string | null; calendar_link: string | null; notes: string | null; completed_at: string | null };
+  onSave: (patch: Record<string, string | null>) => void;
+}) {
+  const [link, setLink] = useState(session.calendar_link ?? "");
+  const [notes, setNotes] = useState(session.notes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await onSave({ calendar_link: link || null, notes: notes || null });
+    setSaving(false);
+  }
+
+  async function markDone() {
+    await onSave({ completed_at: new Date().toISOString() });
+  }
+
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "7px", padding: "0.875rem 1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <p style={{ fontWeight: 700, fontSize: "0.8125rem", color: TEXT, margin: 0 }}>
+          Session {session.session_number}
+          {session.session_number === 2 && <span style={{ fontWeight: 400, color: MUTED }}> — one week after session 1</span>}
+        </p>
+        {session.completed_at ? (
+          <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#166534", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "9999px" }}>
+            Completed {fmt(session.completed_at)}
+          </span>
+        ) : (
+          <button onClick={markDone} style={{ fontSize: "0.75rem", background: "none", border: `1px solid ${TEAL}`, color: TEAL, fontWeight: 600, padding: "0.2rem 0.6rem", borderRadius: "9999px", cursor: "pointer" }}>
+            Mark complete
+          </button>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
+        <input value={link} onChange={e => setLink(e.target.value)} placeholder="Calendar / booking link"
+          style={{ padding: "0.4rem 0.625rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.78rem", color: TEXT, fontFamily: "inherit", outline: "none" }} />
+        <button onClick={save} disabled={saving}
+          style={{ background: DARK, color: "#fff", fontWeight: 600, fontSize: "0.75rem", padding: "0.4rem 0.75rem", border: "none", borderRadius: "5px", cursor: "pointer" }}>
+          {saving ? "…" : "Save"}
+        </button>
+      </div>
+      <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Session notes"
+        style={{ width: "100%", boxSizing: "border-box", padding: "0.4rem 0.625rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.78rem", color: TEXT, fontFamily: "inherit", outline: "none" }} />
+    </div>
+  );
+}
+
 function Applications() {
   const qc = useQueryClient();
   const { data: apps = [], isLoading } = useApplications();
   const [filter, setFilter] = useState<"pending" | "rejected" | "all">("pending");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const approveMutation = useMutation({
-    mutationFn: async ({ id, tier }: { id: string; tier: string | null }) => {
-      const isPaid = tier === "collaborator" || tier === "strategic";
-      const { error } = await supabase
-        .from("organizations")
-        .update({
-          is_active: true,
-          is_verified: true,
-          payment_status: isPaid ? "unpaid" : "exempt",
-        })
-        .eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-applications"] });
-      qc.invalidateQueries({ queryKey: ["admin-organizations"] });
-      qc.invalidateQueries({ queryKey: ["directory"] });
-      setExpanded(null);
-    },
-  });
-
-  const markPaidMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("organizations").update({ payment_status: "paid" }).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-applications"] }),
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: async (id: string) => {
-      // is_verified=true + is_active=false = reviewed but rejected (kept out of directory)
-      const { error } = await supabase
-        .from("organizations")
-        .update({ is_active: false, is_verified: true })
-        .eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-applications"] }); setExpanded(null); },
-  });
-
-  const revertMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("organizations")
-        .update({ is_active: false, is_verified: false })
-        .eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-applications"] }),
-  });
-
-  // pending = !verified && !active; rejected = verified && !active
+  // pending = not yet active; rejected = verified+!active with no agreement/payment steps
   const filtered = apps.filter(a => {
-    if (filter === "pending")  return !a.is_verified && !a.is_active;
-    if (filter === "rejected") return  a.is_verified && !a.is_active;
-    return true;
+    if (filter === "rejected") return a.is_verified && !a.is_active && !a.agreement_signed_at && !a.payment_requested_at;
+    if (filter === "pending")  return !a.is_active;
+    return !a.is_active;
   });
 
-  const pendingCount  = apps.filter(a => !a.is_verified && !a.is_active).length;
-  const rejectedCount = apps.filter(a => a.is_verified && !a.is_active).length;
+  const pendingCount  = apps.filter(a => !a.is_active).length;
+  const rejectedCount = apps.filter(a => a.is_verified && !a.is_active && !a.agreement_signed_at && !a.payment_requested_at).length;
 
   const filterBtnStyle = (f: string) => ({
     padding: "0.4rem 0.875rem",
@@ -465,12 +827,12 @@ function Applications() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 0.2rem" }}>Partner Applications</h1>
-          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>Review and act on incoming membership applications.</p>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>Staged workflow: verification → agreement → payment → activation.</p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button style={filterBtnStyle("all")} onClick={() => setFilter("all")}>All ({apps.length})</button>
-          <button style={filterBtnStyle("pending")} onClick={() => setFilter("pending")}>Pending ({pendingCount})</button>
+          <button style={filterBtnStyle("pending")} onClick={() => setFilter("pending")}>In progress ({pendingCount})</button>
           <button style={filterBtnStyle("rejected")} onClick={() => setFilter("rejected")}>Rejected ({rejectedCount})</button>
+          <button style={filterBtnStyle("all")} onClick={() => setFilter("all")}>All ({apps.length})</button>
         </div>
       </div>
 
@@ -479,8 +841,9 @@ function Applications() {
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {!isLoading && filtered.map(app => {
           const primary = app.contacts.find(c => c.is_primary) ?? app.contacts[0];
-          const isRejected = app.is_verified && !app.is_active;
           const tierColor = TIER_COLORS[app.membership_tier ?? ""] ?? MUTED;
+          const stage = appStage(app);
+          const stageInfo = STAGE_LABELS[stage] ?? STAGE_LABELS.submitted;
 
           return (
             <div key={app.id} style={{ background: SURFACE, border: `1px solid ${expanded === app.id ? TEAL : BORDER}`, borderLeft: `4px solid ${tierColor}`, borderRadius: "8px", overflow: "hidden", transition: "border-color 0.15s" }}>
@@ -488,7 +851,9 @@ function Applications() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.2rem" }}>
                     <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.9375rem", margin: 0 }}>{app.name}</p>
-                    <StatusBadge status={isRejected ? "rejected" : "pending"} />
+                    <span style={{ background: `${stageInfo.color}18`, color: stageInfo.color, fontSize: "0.68rem", fontWeight: 700, padding: "0.15rem 0.5rem", borderRadius: "9999px" }}>
+                      {stageInfo.label}
+                    </span>
                   </div>
                   <p style={{ color: MUTED, fontSize: "0.8rem", margin: 0 }}>{app.org_type} · {app.county} County{primary ? ` · ${primary.full_name}` : ""}</p>
                 </div>
@@ -499,71 +864,7 @@ function Applications() {
                 <span style={{ color: MUTED, fontSize: "0.75rem" }}>{expanded === app.id ? "▲" : "▼"}</span>
               </div>
 
-              {expanded === app.id && (
-                <div style={{ borderTop: `1px solid ${BORDER}`, padding: "1.25rem", background: BG }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.25rem" }}>
-                    <div>
-                      <p style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED, margin: "0 0 0.5rem" }}>Description</p>
-                      <p style={{ fontSize: "0.875rem", color: TEXT, lineHeight: 1.6, margin: 0 }}>{app.description ?? "—"}</p>
-                    </div>
-                    {primary && (
-                      <div>
-                        <p style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED, margin: "0 0 0.5rem" }}>Primary Contact</p>
-                        <p style={{ fontSize: "0.875rem", color: TEXT, fontWeight: 600, margin: "0 0 0.15rem" }}>{primary.full_name}</p>
-                        {primary.title && <p style={{ fontSize: "0.8125rem", color: MUTED, margin: "0 0 0.25rem" }}>{primary.title}</p>}
-                        {primary.email && <p style={{ fontSize: "0.8125rem", color: MUTED, margin: "0 0 0.15rem" }}>{primary.email}</p>}
-                        {primary.phone && <p style={{ fontSize: "0.8125rem", color: TEXT, margin: 0 }}>{primary.phone}</p>}
-                      </div>
-                    )}
-                  </div>
-                  {/* Payment link row — shows for approved paid-tier orgs awaiting payment */}
-                  {app.is_active && app.payment_status === "unpaid" && (
-                    <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "7px", padding: "0.875rem 1.125rem", marginBottom: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-                      <div>
-                        <p style={{ fontWeight: 600, color: "#92400E", fontSize: "0.875rem", margin: "0 0 0.2rem" }}>Payment pending</p>
-                        <p style={{ color: "#78350F", fontSize: "0.8rem", margin: 0 }}>Org is live in directory. Send the payment link to activate billing.</p>
-                      </div>
-                      <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-                        {STRIPE_LINKS[app.membership_tier ?? ""] ? (
-                          <button
-                            onClick={() => { navigator.clipboard.writeText(STRIPE_LINKS[app.membership_tier ?? ""]); }}
-                            style={{ background: "#1E3A4A", color: "#fff", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1rem", border: "none", borderRadius: "6px", cursor: "pointer" }}
-                          >
-                            Copy Payment Link
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: "0.775rem", color: "#78350F", fontStyle: "italic" }}>Add VITE_STRIPE_LINK_{(app.membership_tier ?? "").toUpperCase()} to .env</span>
-                        )}
-                        <button
-                          onClick={() => markPaidMutation.mutate(app.id)}
-                          disabled={markPaidMutation.isPending}
-                          style={{ background: SURFACE, border: "1.5px solid #A7F3D0", color: "#065F46", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}
-                        >
-                          Mark as Paid
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", alignItems: "center" }}>
-                    <button onClick={() => revertMutation.mutate(app.id)} style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.8rem", padding: "0.5rem 1rem", borderRadius: "7px", cursor: "pointer" }}>
-                      Reset to pending
-                    </button>
-                    {!isRejected && !app.is_active && (
-                      <button onClick={() => rejectMutation.mutate(app.id)} disabled={rejectMutation.isPending}
-                        style={{ background: SURFACE, border: "1.5px solid #FECACA", color: "#B91C1C", fontWeight: 600, fontSize: "0.875rem", padding: "0.6rem 1.25rem", borderRadius: "7px", cursor: "pointer" }}>
-                        Reject
-                      </button>
-                    )}
-                    {!isRejected && !app.is_active && (
-                      <button onClick={() => approveMutation.mutate({ id: app.id, tier: app.membership_tier })} disabled={approveMutation.isPending}
-                        style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 600, fontSize: "0.875rem", padding: "0.6rem 1.5rem", borderRadius: "7px", cursor: "pointer" }}>
-                        {approveMutation.isPending ? "Approving…" : "✓ Approve & Add to Directory"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+              {expanded === app.id && <AppWorkflowPanel app={app} qc={qc} />}
             </div>
           );
         })}
@@ -973,6 +1274,7 @@ function Organizations() {
               <div>
                 <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{org.name}</p>
                 <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{org.org_type} · {org.county}</p>
+                <LocationCount orgId={org.id} />
               </div>
               <div>
                 <p style={{ color: TEXT, fontSize: "0.8375rem", margin: "0 0 0.1rem" }}>{primary?.full_name ?? "—"}</p>
@@ -1190,18 +1492,350 @@ function AnnouncementsAdmin() {
   );
 }
 
+// ─── TSE Tasks ────────────────────────────────────────────────────────────────
+
+interface LocationReview {
+  review_id: string;
+  location_id: string;
+  location_name: string;
+  org_id: string;
+  org_name: string;
+  review_type: string;
+  priority: string;
+  status: string;
+  notes: string | null;
+  target_completion: string | null;
+  created_at: string;
+  listing_status: string;
+  tse_contact_attempts: number;
+}
+
+const REVIEW_TYPE_LABELS: Record<string, string> = {
+  overdue_outreach:        "Overdue Outreach",
+  pause_notice:            "Pause Notice",
+  suspension_pending:      "Suspension Pending",
+  poc_change_review:       "POC Change Review",
+  contact_request_followup:"Contact Request Follow-up",
+};
+
+const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
+  urgent: { bg: "#FEE2E2", color: "#991B1B" },
+  high:   { bg: "#FEF3C7", color: "#92400E" },
+  normal: { bg: "#DBEAFE", color: "#1E40AF" },
+};
+
+function useLocationReviews() {
+  return useQuery({
+    queryKey: ["location_reviews"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_get_location_reviews");
+      if (error) throw error;
+      return (data ?? []) as LocationReview[];
+    },
+    networkMode: "always",
+    retry: false,
+    refetchInterval: 30_000,
+  });
+}
+
+function useRestorableLocations() {
+  return useQuery({
+    queryKey: ["restorable_locations"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("locations")
+        .select("id, name, listing_status, org_id, organizations!inner(name)")
+        .in("listing_status", ["paused", "suspended"])
+        .eq("is_active", true);
+      if (error) throw error;
+      // Filter to those with no open reviews
+      const { data: openReviews } = await supabase
+        .from("location_reviews")
+        .select("location_id")
+        .eq("status", "open");
+      const openIds = new Set((openReviews ?? []).map((r: { location_id: string }) => r.location_id));
+      type LocRow = { id: string; name: string; listing_status: string; org_id: string; organizations: { name: string }[] };
+      return ((data ?? []) as unknown as LocRow[])
+        .filter(l => !openIds.has(l.id))
+        .map(l => ({ id: l.id, name: l.name, listing_status: l.listing_status, org_id: l.org_id, org_name: l.organizations?.[0]?.name ?? "" }));
+    },
+    networkMode: "always",
+    retry: false,
+    refetchInterval: 30_000,
+  });
+}
+
+function TseTasks() {
+  const qc = useQueryClient();
+  const { data: reviews = [], isLoading } = useLocationReviews();
+  const { data: restorable = [] } = useRestorableLocations();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [contactNotes, setContactNotes] = useState<Record<string, string>>({});
+  const [suspendNotes, setSuspendNotes] = useState<Record<string, string>>({});
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [err, setErr] = useState<Record<string, string>>({});
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["location_reviews"] });
+    qc.invalidateQueries({ queryKey: ["restorable_locations"] });
+  }
+
+  async function logContactAttempt(locationId: string, reviewId: string) {
+    setResolvingId(reviewId);
+    const { error } = await supabase.rpc("admin_log_contact_attempt", {
+      p_location_id: locationId,
+      p_notes: contactNotes[reviewId] || null,
+    });
+    setResolvingId(null);
+    if (error) { setErr(e => ({ ...e, [reviewId]: error.message })); return; }
+    setContactNotes(n => ({ ...n, [reviewId]: "" }));
+    invalidate();
+  }
+
+  async function suspendLocation(locationId: string, reviewId: string) {
+    setResolvingId(reviewId);
+    const { error } = await supabase.rpc("admin_suspend_location", {
+      p_location_id: locationId,
+      p_notes: suspendNotes[reviewId] || null,
+    });
+    setResolvingId(null);
+    if (error) { setErr(e => ({ ...e, [reviewId]: error.message })); return; }
+    invalidate();
+  }
+
+  async function restoreLocation(locationId: string, reviewId: string) {
+    setResolvingId(reviewId);
+    const { error } = await supabase.rpc("admin_restore_location", { p_location_id: locationId });
+    setResolvingId(null);
+    if (error) { setErr(e => ({ ...e, [reviewId]: error.message })); return; }
+    invalidate();
+  }
+
+  async function resolveReview(reviewId: string, notes?: string) {
+    setResolvingId(reviewId);
+    const { error } = await supabase.rpc("admin_resolve_review", {
+      p_review_id: reviewId,
+      p_notes: notes || null,
+    });
+    setResolvingId(null);
+    if (error) { setErr(e => ({ ...e, [reviewId]: error.message })); return; }
+    invalidate();
+  }
+
+  if (isLoading) return <p style={{ color: MUTED }}>Loading tasks…</p>;
+
+  const totalOpen = reviews.length + restorable.length;
+
+  if (totalOpen === 0) {
+    return (
+      <div>
+        <h2 style={{ fontSize: "1.375rem", fontWeight: 700, color: TEXT, margin: "0 0 0.375rem" }}>TSE Tasks</h2>
+        <p style={{ color: MUTED, fontSize: "0.9rem" }}>No open tasks. All location reviews are resolved.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: "1.75rem" }}>
+        <h2 style={{ fontSize: "1.375rem", fontWeight: 700, color: TEXT, margin: "0 0 0.375rem" }}>TSE Tasks</h2>
+        <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>{reviews.length} open task{reviews.length !== 1 ? "s" : ""} requiring attention</p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {reviews.map((r) => {
+          const pColor = PRIORITY_COLORS[r.priority] ?? PRIORITY_COLORS.normal;
+          const isExpanded = expandedId === r.review_id;
+          const isOverdue = r.target_completion && new Date(r.target_completion) < new Date();
+          const isSuspensionPending = r.review_type === "suspension_pending";
+          const isPocChange = r.review_type === "poc_change_review";
+
+          return (
+            <div key={r.review_id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${pColor.color}`, borderRadius: "8px", overflow: "hidden" }}>
+              <div
+                onClick={() => setExpandedId(isExpanded ? null : r.review_id)}
+                style={{ padding: "1rem 1.25rem", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: "1rem", justifyContent: "space-between" }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", flexWrap: "wrap", marginBottom: "0.3rem" }}>
+                    <span style={{ background: pColor.bg, color: pColor.color, fontSize: "0.65rem", fontWeight: 700, padding: "0.2rem 0.55rem", borderRadius: "4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      {r.priority.toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: "0.78rem", fontWeight: 600, color: TEXT }}>
+                      {REVIEW_TYPE_LABELS[r.review_type] ?? r.review_type}
+                    </span>
+                    {isOverdue && (
+                      <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#B91C1C", background: "#FEE2E2", padding: "0.15rem 0.4rem", borderRadius: "4px" }}>OVERDUE</span>
+                    )}
+                  </div>
+                  <p style={{ margin: "0 0 0.25rem", fontWeight: 600, fontSize: "0.9rem", color: TEXT }}>{r.org_name} — {r.location_name}</p>
+                  <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.75rem", color: MUTED }}>
+                      Listing: <strong style={{ color: r.listing_status === "paused" ? "#D97706" : r.listing_status === "suspended" ? "#B91C1C" : r.listing_status === "overdue" ? "#C8622A" : TEAL }}>{r.listing_status}</strong>
+                    </span>
+                    {isSuspensionPending && (
+                      <span style={{ fontSize: "0.75rem", color: MUTED }}>Contact attempts: <strong style={{ color: r.tse_contact_attempts >= 2 ? TEAL : "#D97706" }}>{r.tse_contact_attempts}/2</strong></span>
+                    )}
+                    {r.target_completion && (
+                      <span style={{ fontSize: "0.75rem", color: MUTED }}>Due: {new Date(r.target_completion).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                    )}
+                  </div>
+                </div>
+                <span style={{ fontSize: "0.75rem", color: MUTED, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
+              </div>
+
+              {isExpanded && (
+                <div style={{ borderTop: `1px solid ${BORDER}`, padding: "1.25rem" }}>
+                  {r.notes && (
+                    <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.8125rem", color: TEXT, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                      {r.notes}
+                    </div>
+                  )}
+
+                  {err[r.review_id] && (
+                    <p style={{ color: "#DC2626", fontSize: "0.8125rem", marginBottom: "0.75rem" }}>{err[r.review_id]}</p>
+                  )}
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {/* Log contact attempt */}
+                    {(r.review_type === "overdue_outreach" || r.review_type === "suspension_pending") && (
+                      <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-end" }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: TEXT, marginBottom: "0.3rem" }}>Contact attempt notes (optional)</label>
+                          <input
+                            value={contactNotes[r.review_id] ?? ""}
+                            onChange={e => setContactNotes(n => ({ ...n, [r.review_id]: e.target.value }))}
+                            placeholder="Left voicemail, sent follow-up email…"
+                            style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem 0.75rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.8125rem", fontFamily: "inherit", color: TEXT }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => logContactAttempt(r.location_id, r.review_id)}
+                          disabled={resolvingId === r.review_id}
+                          style={{ background: DARK, color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                        >
+                          Log attempt #{(r.tse_contact_attempts ?? 0) + 1}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Suspend (requires ≥2 attempts) */}
+                    {isSuspensionPending && r.tse_contact_attempts >= 2 && (
+                      <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-end" }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: TEXT, marginBottom: "0.3rem" }}>Suspension reason (optional)</label>
+                          <input
+                            value={suspendNotes[r.review_id] ?? ""}
+                            onChange={e => setSuspendNotes(n => ({ ...n, [r.review_id]: e.target.value }))}
+                            placeholder="Unresponsive after 2 attempts…"
+                            style={{ width: "100%", boxSizing: "border-box", padding: "0.5rem 0.75rem", border: "1px solid #FECACA", borderRadius: "6px", fontSize: "0.8125rem", fontFamily: "inherit", color: TEXT }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => suspendLocation(r.location_id, r.review_id)}
+                          disabled={resolvingId === r.review_id}
+                          style={{ background: "#B91C1C", color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                        >
+                          Suspend listing
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Restore (requires all reviews resolved) */}
+                    {(r.listing_status === "paused" || r.listing_status === "suspended") && (
+                      <button
+                        onClick={() => restoreLocation(r.location_id, r.review_id)}
+                        disabled={resolvingId === r.review_id}
+                        style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1.25rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", alignSelf: "flex-start" }}
+                      >
+                        Restore listing (resolve all reviews first)
+                      </button>
+                    )}
+
+                    {/* POC change — resolve after manual review */}
+                    {isPocChange && (
+                      <div style={{ display: "flex", gap: "0.625rem", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.8125rem", color: MUTED, flex: 1 }}>Review the POC change details above, then restore the listing or dismiss.</span>
+                        <button
+                          onClick={async () => {
+                            await resolveReview(r.review_id, "POC change reviewed and approved by TSE.");
+                            await restoreLocation(r.location_id, r.review_id);
+                          }}
+                          disabled={resolvingId === r.review_id}
+                          style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                        >
+                          Approve &amp; restore
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Generic resolve — available for overdue_outreach, pause_notice, contact_request_followup */}
+                    {!isSuspensionPending && !isPocChange && (
+                      <button
+                        onClick={() => resolveReview(r.review_id)}
+                        disabled={resolvingId === r.review_id}
+                        style={{ background: SAGE, color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1.25rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", alignSelf: "flex-start" }}
+                      >
+                        {resolvingId === r.review_id ? "Saving…" : "Mark resolved"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {restorable.length > 0 && (
+        <div style={{ marginTop: "2rem" }}>
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, color: TEXT, margin: "0 0 0.75rem" }}>Ready to Restore</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {restorable.map(loc => (
+              <div key={loc.id} style={{ border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+                <div>
+                  <span style={{ fontSize: "0.9375rem", fontWeight: 600, color: TEXT }}>{loc.org_name} — {loc.name}</span>
+                  <div style={{ fontSize: "0.8125rem", color: MUTED, marginTop: "0.25rem" }}>
+                    Listing: <strong style={{ color: loc.listing_status === "suspended" ? "#B91C1C" : "#D97706" }}>{loc.listing_status}</strong> · All reviews resolved
+                  </div>
+                  {err[loc.id] && <p style={{ color: "#B91C1C", fontSize: "0.8rem", margin: "0.25rem 0 0" }}>{err[loc.id]}</p>}
+                </div>
+                <button
+                  onClick={async () => {
+                    setResolvingId(loc.id);
+                    const { error } = await supabase.rpc("admin_restore_location", { p_location_id: loc.id });
+                    setResolvingId(null);
+                    if (error) { setErr(e => ({ ...e, [loc.id]: error.message })); return; }
+                    invalidate();
+                  }}
+                  disabled={resolvingId === loc.id}
+                  style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "6px", padding: "0.5rem 1.25rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                >
+                  {resolvingId === loc.id ? "Restoring…" : "Restore listing"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [view, setView] = useState<View>("overview");
   const { signOut } = useAuth();
 
-  const { data: apps = [] }    = useApplications();
-  const { data: reqs = [] }    = useConnectionRequests();
-  const { data: claims = [] }  = usePendingClaims();
+  const { data: apps = [] }     = useApplications();
+  const { data: reqs = [] }     = useConnectionRequests();
+  const { data: claims = [] }   = usePendingClaims();
+  const { data: reviews = [] }  = useLocationReviews();
 
   const pendingApps    = apps.filter(a => !a.is_verified && !a.is_active).length;
   const pendingReqs    = reqs.filter(r => r.status === "pending").length;
   const pendingClaims  = claims.length;
+  const pendingTasks   = reviews.length;
 
   const content = {
     overview:      <Overview setView={setView} />,
@@ -1209,6 +1843,7 @@ export default function AdminPage() {
     claims:        <ClaimQueue />,
     requests:      <ConnectionRequests />,
     organizations: <Organizations />,
+    tse_tasks:     <TseTasks />,
     crm:           <CRMView />,
     knowledge:     <KnowledgeLibrary />,
     announcements: <AnnouncementsAdmin />,
@@ -1217,7 +1852,7 @@ export default function AdminPage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: BG }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }`}</style>
-      <Sidebar view={view} setView={setView} onSignOut={signOut} pendingApps={pendingApps} pendingReqs={pendingReqs} pendingClaims={pendingClaims} />
+      <Sidebar view={view} setView={setView} onSignOut={signOut} pendingApps={pendingApps} pendingReqs={pendingReqs} pendingClaims={pendingClaims} pendingTasks={pendingTasks} />
       <main style={{ flex: 1, padding: "2.5rem", overflowY: "auto", minWidth: 0 }}>
         {content}
       </main>

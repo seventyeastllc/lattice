@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import NavBar from "@/components/layout/NavBar";
 import Footer from "@/components/layout/Footer";
 import OrgCard from "@/features/directory/OrgCard";
@@ -7,6 +8,7 @@ import ConnectionModal from "@/features/directory/ConnectionModal";
 import { useDirectory } from "@/hooks/useDirectory";
 import { useSavedResources, useSaveToggle } from "@/hooks/useSavedResources";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 import type { DirectoryOrg } from "@/types/directory";
 import { SERVICE_CATEGORY_LABELS } from "@/types/directory";
 
@@ -35,8 +37,32 @@ const GEORGIA_REGIONS: Record<string, string[]> = {
 
 export default function DirectoryPage() {
   const { user } = useAuth();
-  const isProvider = !!user;
   const { data: orgs = [], isLoading, isError } = useDirectory();
+
+  // Membership gate: signed-in users must be active + paid/exempt to access directory
+  const { data: membershipStatus, isLoading: membershipLoading } = useQuery({
+    queryKey: ["membership-gate", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("organizations")
+        .select("is_active, payment_status, is_verified")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  // Gate: signed-in users with an org that is not yet active+paid should see pending state
+  const membershipPending = !!user && !membershipLoading && membershipStatus !== null && (
+    !membershipStatus?.is_active ||
+    (membershipStatus?.payment_status !== "paid" && membershipStatus?.payment_status !== "exempt")
+  );
+
+  // isProvider = signed-in AND active+paid member
+  const isProvider = !!user && !membershipPending;
   const { data: savedIds = [] } = useSavedResources(user?.id);
   const { save, unsave } = useSaveToggle(user?.id);
 
@@ -180,6 +206,28 @@ export default function DirectoryPage() {
       <div className="dir-page">
         <NavBar />
 
+        {/* Membership pending gate */}
+        {membershipPending && (
+          <div style={{ background: "#FFFBEB", borderBottom: "1px solid #FDE68A", padding: "1rem 2rem" }}>
+            <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "1.25rem" }}>🔒</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: 700, color: "#92400E", fontSize: "0.9rem", margin: "0 0 0.1rem" }}>
+                  Directory access is available to active members
+                </p>
+                <p style={{ color: "#78350F", fontSize: "0.8rem", margin: 0 }}>
+                  Your application is{" "}
+                  {membershipStatus?.is_verified ? "approved — awaiting payment confirmation" : "under review"}.
+                  Contact information and connection requests will be available once your membership is activated.
+                </p>
+              </div>
+              <Link to="/dashboard" style={{ background: "#1E3A4A", color: "#fff", fontWeight: 600, fontSize: "0.8rem", padding: "0.5rem 1.125rem", borderRadius: "7px", textDecoration: "none", flexShrink: 0 }}>
+                View status
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Page header */}
         <div style={{ background: "#1E3A4A", padding: "3rem 2rem 2.5rem" }}>
           <div style={{ maxWidth: 1280, margin: "0 auto" }}>
@@ -305,27 +353,35 @@ export default function DirectoryPage() {
           </div>
         </div>
 
-        {/* Public access banner */}
-        {!isProvider && (
-          <div style={{ background: "#F0F4F3", borderBottom: "1px solid #E2E8E6" }}>
-            <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0.875rem 2rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-                <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-                  <rect x="2" y="6" width="10" height="7" rx="1.5" stroke="#5C7380" strokeWidth="1.4"/>
-                  <path d="M4.5 6V4.5a2.5 2.5 0 015 0V6" stroke="#5C7380" strokeWidth="1.4" strokeLinecap="round"/>
+        {/* Non-member gate: show demo preview + join prompt */}
+        {!isProvider && !membershipPending && (
+          <div style={{ background: "#1E3A4A", padding: "2.5rem 2rem" }}>
+            <div style={{ maxWidth: 900, margin: "0 auto", textAlign: "center" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: "50%", background: "rgba(42,157,143,0.18)", marginBottom: "1.25rem" }}>
+                <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="9" width="14" height="10" rx="2" stroke="#2A9D8F" strokeWidth="1.6"/>
+                  <path d="M6.5 9V7a3.5 3.5 0 017 0v2" stroke="#2A9D8F" strokeWidth="1.6" strokeLinecap="round"/>
                 </svg>
-                <p style={{ color: "#5C7380", fontSize: "0.875rem", margin: 0 }}>
-                  You're viewing the <strong style={{ color: "#1A2B35" }}>public directory.</strong> Contact details and connection requests are available to network members only.
+              </div>
+              <h2 style={{ color: "#ffffff", fontSize: "1.5rem", fontWeight: 800, margin: "0 0 0.625rem" }}>
+                Directory access is for network members
+              </h2>
+              <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.9375rem", lineHeight: 1.7, margin: "0 0 1.75rem", maxWidth: 580, marginLeft: "auto", marginRight: "auto" }}>
+                Contact details, connection requests, and coordination features are available to verified, active members. Apply to join — it's reviewed and activated by TSE.
+              </p>
+              <div style={{ display: "flex", gap: "0.875rem", justifyContent: "center", flexWrap: "wrap" }}>
+                <Link to="/login" style={{ background: "rgba(255,255,255,0.1)", color: "#ffffff", fontSize: "0.9rem", fontWeight: 600, textDecoration: "none", padding: "0.65rem 1.5rem", border: "1px solid rgba(255,255,255,0.25)", borderRadius: "7px" }}>
+                  Sign in to your account
+                </Link>
+                <Link to="/join" style={{ background: "#2A9D8F", color: "#ffffff", fontSize: "0.9rem", fontWeight: 700, textDecoration: "none", padding: "0.65rem 1.75rem", borderRadius: "7px" }}>
+                  Apply to join
+                </Link>
+              </div>
+              {orgs.length > 0 && (
+                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.78rem", marginTop: "2rem", marginBottom: 0 }}>
+                  {orgs.length} demo listing{orgs.length !== 1 ? "s" : ""} shown below as an example of the network directory.
                 </p>
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem", flexShrink: 0 }}>
-                <Link to="/login" style={{ color: "#1E3A4A", fontSize: "0.8125rem", fontWeight: 600, textDecoration: "none", padding: "0.4rem 1rem", border: "1px solid #1E3A4A", borderRadius: "4px", whiteSpace: "nowrap" }}>
-                  Sign In
-                </Link>
-                <Link to="/join" style={{ background: "#2A9D8F", color: "#ffffff", fontSize: "0.8125rem", fontWeight: 600, textDecoration: "none", padding: "0.4rem 1rem", borderRadius: "4px", whiteSpace: "nowrap" }}>
-                  Join the Network
-                </Link>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -341,7 +397,7 @@ export default function DirectoryPage() {
               <>
                 <p style={{ color: "#5C7380", fontSize: "0.875rem", margin: 0 }}>
                   <strong style={{ color: "#1A2B35" }}>{filtered.length}</strong>{" "}
-                  organization{filtered.length !== 1 ? "s" : ""} found
+                  {(!isProvider && !membershipPending) ? `preview listing${filtered.length !== 1 ? "s" : ""}` : `organization${filtered.length !== 1 ? "s" : ""} found`}
                   {activeFilterCount > 0 && (
                     <span style={{ color: "#2A9D8F", marginLeft: "0.5rem" }}>
                       · {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active
@@ -369,7 +425,7 @@ export default function DirectoryPage() {
               </div>
             ) : (
               filtered.map((org) => (
-                <OrgCard key={org.id} org={org} onConnect={setModalOrg} isProvider={isProvider} isSaved={savedIds.includes(org.id)} onSaveToggle={handleSaveToggle} />
+                <OrgCard key={org.id} org={org} onConnect={setModalOrg} isProvider={isProvider} isSaved={savedIds.includes(org.id)} onSaveToggle={handleSaveToggle} isDemo={!isProvider && !membershipPending} />
               ))
             )}
           </div>

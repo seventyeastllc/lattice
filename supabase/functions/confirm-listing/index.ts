@@ -14,10 +14,10 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
-  // Look up the token
+  // Look up the token (now includes location_id)
   const { data: row, error } = await supabase
     .from("listing_tokens")
-    .select("id, org_id, expires_at, used_at, requires_login")
+    .select("id, org_id, location_id, expires_at, used_at, requires_login")
     .eq("token", token)
     .single();
 
@@ -25,31 +25,66 @@ Deno.serve(async (req) => {
   if (row.used_at)   return htmlResponse(alreadyUsedPage(), 200);
   if (new Date(row.expires_at) < new Date()) return htmlResponse(errorPage("This confirmation link has expired. Check your email for a newer one."), 410);
 
-  // Login-required: redirect to dashboard
+  // Login-required: redirect to dashboard with location-scoped param
   if (row.requires_login) {
-    return Response.redirect(`${DASHBOARD_URL}?verify=listing&org=${row.org_id}`, 302);
+    const dest = row.location_id
+      ? `${DASHBOARD_URL}?verify=listing&location=${row.location_id}`
+      : `${DASHBOARD_URL}?verify=listing&org=${row.org_id}`;
+    return Response.redirect(dest, 302);
   }
 
-  // Mark token used + update org's last_confirmed_at
   const now = new Date().toISOString();
-  const [tokenUpdate, orgUpdate] = await Promise.all([
-    supabase.from("listing_tokens").update({ used_at: now }).eq("id", row.id),
-    supabase.from("organizations").update({ last_confirmed_at: now }).eq("id", row.org_id),
-  ]);
 
-  if (tokenUpdate.error || orgUpdate.error) {
-    console.error(tokenUpdate.error ?? orgUpdate.error);
+  // Mark token used + update location's last_confirmed_at and restore listing_status
+  const updates: Promise<unknown>[] = [
+    supabase.from("listing_tokens").update({ used_at: now }).eq("id", row.id),
+  ];
+
+  if (row.location_id) {
+    // Location-level confirmation: restore to active, clear pause/suspend fields
+    updates.push(
+      supabase.from("locations").update({
+        last_confirmed_at: now,
+        listing_status: "active",
+        paused_at: null,
+        paused_reason: null,
+        suspended_at: null,
+      }).eq("id", row.location_id),
+    );
+  } else {
+    // Legacy org-level token (no location_id): update org-level timestamp
+    updates.push(
+      supabase.from("organizations").update({ last_confirmed_at: now }).eq("id", row.org_id),
+    );
+  }
+
+  const results = await Promise.all(updates);
+  const updateErr = results.find((r: any) => r.error)?.error;
+
+  if (updateErr) {
+    console.error(updateErr);
     return htmlResponse(errorPage("Something went wrong. Please reply to your email and we'll sort it out."), 500);
   }
 
-  // Fetch org name for the success page
-  const { data: org } = await supabase
-    .from("organizations")
-    .select("name")
-    .eq("id", row.org_id)
-    .single();
+  // Fetch location name (or fall back to org name) for the success page
+  let displayName = "your location";
+  if (row.location_id) {
+    const { data: loc } = await supabase
+      .from("locations")
+      .select("name")
+      .eq("id", row.location_id)
+      .single();
+    if (loc?.name) displayName = loc.name;
+  } else {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("name")
+      .eq("id", row.org_id)
+      .single();
+    if (org?.name) displayName = org.name;
+  }
 
-  return htmlResponse(successPage(org?.name ?? "your organization"), 200);
+  return htmlResponse(successPage(displayName), 200);
 });
 
 // ─── Page templates ───────────────────────────────────────────────────────────
@@ -112,11 +147,11 @@ function shell(content: string): string {
 </html>`;
 }
 
-function successPage(orgName: string): string {
+function successPage(locationName: string): string {
   return shell(`
     <div class="icon">✅</div>
     <h1>Listing confirmed.</h1>
-    <p>Thanks for verifying <strong style="color:#1A2B35;">${orgName}</strong>. Your listing is active for another week and the network can continue connecting with you.</p>
+    <p>Thanks for verifying <strong style="color:#1A2B35;">${locationName}</strong>. Your listing is active and the network can continue connecting with you.</p>
     <p style="font-size:0.8125rem;">Need to update something? Reply to any Lattice email or sign in to your dashboard.</p>
     <a class="btn" href="https://membership.seedxga.com">Back to Lattice</a>
   `);

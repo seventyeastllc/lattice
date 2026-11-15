@@ -9,6 +9,7 @@ interface Props {
   isProvider?: boolean;
   isSaved?: boolean;
   onSaveToggle?: (orgId: string) => void;
+  isDemo?: boolean;
 }
 
 const ORG_TYPE_LABELS: Record<OrgType, string> = {
@@ -37,7 +38,7 @@ function serviceLabel(svc: { name: string; category: string }): string {
   return SERVICE_CATEGORY_LABELS[svc.category] ?? svc.name;
 }
 
-export default function OrgCard({ org, onConnect, isProvider = false, isSaved = false, onSaveToggle }: Props) {
+export default function OrgCard({ org, onConnect, isProvider = false, isSaved = false, onSaveToggle, isDemo = false }: Props) {
   const [hovered, setBtnHovered] = useState(false);
   const [cardHovered, setCardHovered] = useState(false);
   const [phoneHovered, setPhoneHovered] = useState(false);
@@ -61,6 +62,13 @@ export default function OrgCard({ org, onConnect, isProvider = false, isSaved = 
         position: "relative",
       }}
     >
+      {/* Demo badge — shown to anonymous visitors */}
+      {isDemo && (
+        <div style={{ position: "absolute", top: 10, right: 10, background: "rgba(42,157,143,0.12)", color: "#2A9D8F", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", padding: "0.2rem 0.55rem", borderRadius: "4px", border: "1px solid rgba(42,157,143,0.25)" }}>
+          Preview
+        </div>
+      )}
+
       {/* Bookmark button — members only */}
       {isProvider && onSaveToggle && (
         <button

@@ -16,6 +16,12 @@ const MUTED   = "#5C7380";
 const RED     = "#DC2626";
 const GOLD    = "#D97706";
 
+// ─── Configurable inputs ──────────────────────────────────────────────────────
+// Set these env vars before go-live.
+const BOOKING_LINK_VERIFICATION  = import.meta.env.VITE_BOOKING_LINK_VERIFICATION  ?? "";
+const ROE_URL                    = import.meta.env.VITE_ROE_URL                    ?? "";
+const BOOKING_LINK_IMPLEMENTATION = import.meta.env.VITE_BOOKING_LINK_IMPLEMENTATION ?? "";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tier = "participant" | "collaborator" | "strategic" | "anchor";
 
@@ -73,17 +79,19 @@ const EMPTY_FORM: FormData = {
 };
 
 // ─── Tier definitions ─────────────────────────────────────────────────────────
+// Four cumulative paid levels. Each tier includes all benefits of levels below.
+// Founding Member status (is_founding_member) and two-year rate protection are
+// separate from service entitlements and apply to anchor-tier members.
 const TIERS: TierDef[] = [
   {
-    id: "participant", category: "Foundational Access", label: "Network Participant",
-    description: "For organizations beginning structured participation within The Seed Exchange network.",
-    price: "Free", period: "", color: SAGE, icon: "♥",
+    id: "participant", category: "Directory Listing", label: "Network Participant",
+    description: "For organizations entering the network and establishing a verified presence in the Lattice directory.",
+    price: "$0", period: "/ mo", color: SAGE, icon: "○",
     perks: [
-      "Verified directory profile within Lattice",
-      "Referral submission and receipt access",
-      "Participation in shared referral standards",
-      "Monthly partner coordination huddles",
-      "Inclusion in collective outcome reporting",
+      "Verified listing in the Lattice partner directory",
+      "Weekly listing confirmation and accuracy checks",
+      "Referral visibility to network members",
+      "Access to network event announcements",
     ],
   },
   {
@@ -190,7 +198,7 @@ function Field({ label, required, hint, children }: {
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
-  const steps = ["Find your org", "Choose tier", "Your organization", "Review & submit"];
+  const steps = ["Find your org", "Choose tier", "Your organization", "Rules of Engagement", "Review & submit"];
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "2.5rem", overflowX: "auto" }}>
       {steps.map((label, i) => {
@@ -728,7 +736,87 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle?: 
   );
 }
 
-// ─── Step 3 — Review & submit ─────────────────────────────────────────────────
+// ─── Step 3 — Rules of Engagement ────────────────────────────────────────────
+function RoEStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  const rules = [
+    { icon: "🔒", title: "Privacy & data standards", body: "Member organizations agree to handle client information according to TSE's shared privacy standards. No HMIS or client-identifying data is transmitted through Lattice." },
+    { icon: "🤝", title: "Good-faith referral practice", body: "Members commit to responding to coordination requests in a timely manner and updating their availability accurately." },
+    { icon: "✅", title: "Listing accuracy", body: "Each location's designated POC is responsible for confirming their listing weekly. Listings not confirmed within 21 days are paused." },
+    { icon: "📋", title: "Verification participation", body: "New members complete a 30-minute verification call with TSE before activation. Additional checks may be requested." },
+    { icon: "💳", title: "Annual membership agreement", body: "Membership is billed annually per location. TSE will request a signed agreement and payment before activating directory and coordination access." },
+    { icon: "🔄", title: "Renewal & changes", body: "Organizations notify TSE of significant service or POC changes. Renewals are due on the organization's annual renewal date." },
+  ];
+
+  return (
+    <div>
+      <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 0.375rem" }}>Rules of Engagement</h2>
+      <p style={{ color: MUTED, fontSize: "0.9375rem", margin: "0 0 1.75rem", lineHeight: 1.6 }}>
+        Lattice is a standards-based network. Review the participation rules below before submitting your application.
+        {ROE_URL && <> Full document: <a href={ROE_URL} target="_blank" rel="noreferrer" style={{ color: TEAL, fontWeight: 600 }}>Rules of Engagement ↗</a></>}
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "2rem" }}>
+        {rules.map(r => (
+          <div key={r.title} style={{ display: "flex", gap: "1rem", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1rem 1.25rem" }}>
+            <span style={{ fontSize: "1.25rem", flexShrink: 0, marginTop: "0.1rem" }}>{r.icon}</span>
+            <div>
+              <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.3rem" }}>{r.title}</p>
+              <p style={{ color: MUTED, fontSize: "0.8125rem", lineHeight: 1.6, margin: 0 }}>{r.body}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Verification call notice */}
+      <div style={{ background: `${TEAL}0D`, border: `1px solid ${TEAL}40`, borderRadius: "8px", padding: "1.125rem 1.375rem", marginBottom: "1.75rem" }}>
+        <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.3rem" }}>Next step: verification call</p>
+        <p style={{ color: MUTED, fontSize: "0.8125rem", lineHeight: 1.6, margin: "0 0 0.75rem" }}>
+          After submitting, a TSE coordinator will review your application within <strong style={{ color: TEXT }}>2–3 business days</strong>.
+          You'll be contacted to schedule a 30-minute verification call before activation.
+        </p>
+        {BOOKING_LINK_VERIFICATION ? (
+          <a href={BOOKING_LINK_VERIFICATION} target="_blank" rel="noreferrer"
+            style={{ display: "inline-block", background: DARK, color: "#fff", fontWeight: 600, fontSize: "0.8125rem", padding: "0.5rem 1.125rem", borderRadius: "6px", textDecoration: "none" }}>
+            Book a verification call ↗
+          </a>
+        ) : (
+          <span style={{ fontSize: "0.78rem", color: MUTED, fontStyle: "italic" }}>Booking link coming soon — TSE will reach out by email.</span>
+        )}
+      </div>
+
+      <label style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", cursor: "pointer", marginBottom: "2rem" }}>
+        <input
+          type="checkbox"
+          checked={acknowledged}
+          onChange={e => setAcknowledged(e.target.checked)}
+          style={{ accentColor: TEAL, width: 18, height: 18, flexShrink: 0, marginTop: "0.1rem" }}
+        />
+        <span style={{ fontSize: "0.875rem", color: TEXT, lineHeight: 1.6 }}>
+          I have read the Rules of Engagement and agree that our organization will participate in accordance with TSE's network standards.
+        </span>
+      </label>
+
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <button onClick={onBack} style={{ background: "transparent", border: `1.5px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.9rem", padding: "0.7rem 1.5rem", borderRadius: "8px", cursor: "pointer" }}>
+          ← Back
+        </button>
+        <button onClick={onNext} disabled={!acknowledged} style={{
+          background: acknowledged ? DARK : "rgba(0,0,0,0.1)",
+          color: acknowledged ? "#fff" : MUTED,
+          fontWeight: 700, fontSize: "0.9375rem",
+          padding: "0.75rem 2rem", border: "none", borderRadius: "8px",
+          cursor: acknowledged ? "pointer" : "not-allowed", transition: "background 0.15s",
+        }}>
+          Review & submit →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 4 — Review & submit ─────────────────────────────────────────────────
 function ReviewStep({ tier, form, lead, onBack, onSubmit, submitting, submitError }: {
   tier: TierDef; form: FormData; lead: PrmLead | null;
   onBack: () => void; onSubmit: () => void; submitting: boolean; submitError: string | null;
@@ -815,18 +903,64 @@ function ReviewRow({ label, value, accent }: { label: string; value: string; acc
 
 // ─── Success ──────────────────────────────────────────────────────────────────
 function SuccessState({ tier, name }: { tier: TierDef; name: string }) {
+  const firstName = name.split(" ")[0];
+  const steps = [
+    { n: 1, label: "TSE review", detail: "2–3 business days" },
+    { n: 2, label: "Verification call", detail: "30-minute call with a TSE coordinator" },
+    { n: 3, label: "Agreement & payment", detail: `Annual ${tier.label} membership` },
+    { n: 4, label: "Access activated", detail: "Directory + coordination features enabled" },
+    { n: 5, label: "Implementation sessions", detail: "Two 90-min cohort onboarding sessions" },
+  ];
   return (
-    <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
-      <div style={{ width: 72, height: 72, borderRadius: "50%", background: `${TEAL}15`, border: `2px solid ${TEAL}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem", fontSize: "2rem" }}>✓</div>
-      <h2 style={{ fontSize: "1.875rem", fontWeight: 700, color: TEXT, margin: "0 0 0.75rem" }}>Application received.</h2>
-      <p style={{ color: MUTED, fontSize: "1rem", lineHeight: 1.7, maxWidth: 480, margin: "0 auto 0.75rem" }}>
-        Thanks, {name.split(" ")[0]}. Your <span style={{ color: tier.color, fontWeight: 600 }}>{tier.label}</span> application is in. A TSE coordinator will review and reach out within 2–3 business days.
-      </p>
-      <p style={{ color: MUTED, fontSize: "0.875rem", margin: "0 auto 2.5rem", maxWidth: 440, lineHeight: 1.6 }}>
-        In the meantime, explore the directory to see the network you're joining.
-      </p>
+    <div style={{ padding: "3rem 1rem" }}>
+      <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+        <div style={{ width: 72, height: 72, borderRadius: "50%", background: `${TEAL}15`, border: `2px solid ${TEAL}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem", fontSize: "2rem" }}>✓</div>
+        <h2 style={{ fontSize: "1.875rem", fontWeight: 700, color: TEXT, margin: "0 0 0.75rem" }}>Application received.</h2>
+        <p style={{ color: MUTED, fontSize: "1rem", lineHeight: 1.7, maxWidth: 480, margin: "0 auto" }}>
+          Thanks, {firstName}. Your <span style={{ color: tier.color, fontWeight: 600 }}>{tier.label}</span> application is in. A TSE coordinator will review and reach out within 2–3 business days.
+        </p>
+      </div>
+
+      {/* What happens next */}
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "10px", padding: "1.75rem", maxWidth: 540, margin: "0 auto 2rem" }}>
+        <p style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, margin: "0 0 1.25rem" }}>What happens next</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+          {steps.map((s, i) => (
+            <div key={s.n} style={{ display: "flex", gap: "0.875rem", alignItems: "flex-start" }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? TEAL : BORDER, color: i === 0 ? "#fff" : MUTED, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 700, flexShrink: 0 }}>{s.n}</div>
+              <div>
+                <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>{s.label}</p>
+                <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{s.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {BOOKING_LINK_VERIFICATION && (
+        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: "0 0 0.75rem" }}>Want to get a head start? Book your verification call now.</p>
+          <a href={BOOKING_LINK_VERIFICATION} target="_blank" rel="noreferrer"
+            style={{ display: "inline-block", background: TEAL, color: "#fff", fontWeight: 700, fontSize: "0.9375rem", padding: "0.75rem 1.75rem", borderRadius: "8px", textDecoration: "none" }}>
+            Book verification call ↗
+          </a>
+        </div>
+      )}
+
+      {BOOKING_LINK_IMPLEMENTATION && (
+        <div style={{ background: `${DARK}08`, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1rem 1.375rem", maxWidth: 540, margin: "0 auto 2rem", textAlign: "center" }}>
+          <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.3rem" }}>Implementation sessions</p>
+          <p style={{ color: MUTED, fontSize: "0.8125rem", lineHeight: 1.6, margin: "0 0 0.75rem" }}>
+            After activation, you'll attend two 90-minute cohort onboarding sessions, one week apart.
+          </p>
+          <a href={BOOKING_LINK_IMPLEMENTATION} target="_blank" rel="noreferrer"
+            style={{ display: "inline-block", background: DARK, color: "#fff", fontWeight: 600, fontSize: "0.8125rem", padding: "0.5rem 1.125rem", borderRadius: "6px", textDecoration: "none" }}>
+            View implementation schedule ↗
+          </a>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
-        <Link to="/directory" style={{ background: DARK, color: "#fff", fontWeight: 600, fontSize: "0.9375rem", padding: "0.75rem 1.75rem", borderRadius: "8px", textDecoration: "none" }}>Browse the Directory</Link>
         <Link to="/" style={{ background: "transparent", border: `1.5px solid ${BORDER}`, color: MUTED, fontWeight: 500, fontSize: "0.9375rem", padding: "0.75rem 1.75rem", borderRadius: "8px", textDecoration: "none" }}>Back to home</Link>
       </div>
     </div>
@@ -835,7 +969,7 @@ function SuccessState({ tier, name }: { tier: TierDef; name: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function JoinPage() {
-  const [step, setStep]             = useState<0 | 1 | 2 | 3 | "done">(0);
+  const [step, setStep]             = useState<0 | 1 | 2 | 3 | 4 | "done">(0);
   const [selectedLead, setLead]     = useState<PrmLead | null>(null);
   const [prefilled, setPrefilled]   = useState(false);
   const [selected, setSelected]     = useState<Tier | null>(null);
@@ -888,7 +1022,7 @@ export default function JoinPage() {
         county: form.county, description: form.description,
         website: form.website || null,
         membership_tier: selected,
-        payment_status: (selected === "participant" || selected === "anchor") ? "exempt" : "unpaid",
+        payment_status: (selected === "anchor" || selected === "participant") ? "exempt" : "unpaid",
         has_funding_available: form.has_funding,
         claimed_lead_id: selectedLead?.record_id ?? null,
         is_active: false, is_verified: false,
@@ -902,8 +1036,21 @@ export default function JoinPage() {
       return;
     }
 
+    // Create the default location for this org (the initial service site)
+    const locationId = crypto.randomUUID();
+    await supabase.from("locations").insert({
+      id: locationId,
+      org_id: orgId,
+      name: form.org_name + " — Main Office",
+      location_type: "physical",
+      county: form.county,
+      is_active: false,
+      is_verified: false,
+    });
+
     await supabase.from("contacts").insert({
       organization_id: orgId,
+      location_id: locationId,
       full_name: form.contact_name, title: form.contact_title || null,
       email: form.contact_email, phone: form.contact_phone,
       is_primary: true, accepts_case_conference: form.accepts_case_conference,
@@ -950,12 +1097,13 @@ export default function JoinPage() {
         </div>
 
         <div style={{ maxWidth: 960, margin: "0 auto", padding: "3rem 2rem 5rem", width: "100%", boxSizing: "border-box" }}>
-          {step !== "done" && <StepBar step={(step as number) + 1} />}
+          {step !== "done" && <StepBar step={typeof step === "number" ? step + 1 : 1} />}
 
           {step === 0 && <ClaimSearchStep onClaim={handleClaim} onNew={handleNew} />}
           {step === 1 && <TierPicker selected={selected} onSelect={setSelected} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && selected && <AppForm tier={tier} form={form} prefilled={prefilled} onChange={patch} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
-          {step === 3 && selected && <ReviewStep tier={tier} form={form} lead={selectedLead} onBack={() => setStep(2)} onSubmit={handleSubmit} submitting={submitting} submitError={submitError} />}
+          {step === 3 && <RoEStep onBack={() => setStep(2)} onNext={() => setStep(4)} />}
+          {step === 4 && selected && <ReviewStep tier={tier} form={form} lead={selectedLead} onBack={() => setStep(3)} onSubmit={handleSubmit} submitting={submitting} submitError={submitError} />}
           {step === "done" && <SuccessState tier={tier} name={form.contact_name} />}
         </div>
         <Footer />

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
@@ -121,11 +121,199 @@ function ProfileModal({ user, onClose }: { user: { email?: string; user_metadata
   );
 }
 
+const ORG_TYPE_COLORS: Record<string, string> = {
+  nonprofit:   "#2A9D8F",
+  faith_based: "#7B68C8",
+  school:      "#E07A3A",
+  medical:     "#3A8FE0",
+  housing:     "#4A7C6F",
+  government:  "#5C7380",
+  other:       "#5C7380",
+};
+
+interface ListingLocation {
+  id: string;
+  name: string;
+  location_type: string | null;
+  county: string | null;
+  listing_status: string;
+  org: { name: string; org_type: string | null; description: string | null } | null;
+  services: { name: string; category: string }[];
+  contacts: { full_name: string; title: string | null; email: string | null; phone: string | null; is_primary: boolean }[];
+}
+
+function ListingVerifyModal({ locationId, onClose }: { locationId: string; onClose: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [err, setErr] = useState("");
+
+  const { data: loc, isLoading } = useQuery<ListingLocation | null>({
+    queryKey: ["listing_verify_location", locationId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("locations")
+        .select(`id, name, location_type, county, listing_status,
+          org:organizations(name, org_type, description),
+          services(name, category),
+          contacts(full_name, title, email, phone, is_primary)`)
+        .eq("id", locationId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as ListingLocation | null;
+    },
+    networkMode: "always",
+    retry: false,
+  });
+
+  async function handleConfirm() {
+    setConfirming(true);
+    setErr("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase
+      .from("locations")
+      .update({
+        last_confirmed_at: new Date().toISOString(),
+        last_confirmed_by: session?.user?.id ?? null,
+        listing_status: "active",
+        paused_at: null,
+        paused_reason: null,
+        suspended_at: null,
+      })
+      .eq("id", locationId);
+    setConfirming(false);
+    if (error) { setErr("Something went wrong. Please try again or reply to your Lattice email."); return; }
+    setConfirmed(true);
+    setTimeout(onClose, 1800);
+  }
+
+  const primary = loc?.contacts?.find(c => c.is_primary) ?? loc?.contacts?.[0];
+  const orgType  = (loc?.org as any)?.org_type ?? "other";
+  const typeColor = ORG_TYPE_COLORS[orgType] ?? "#5C7380";
+  const typeLabel = ORG_TYPE_LABELS[orgType] ?? "Organization";
+  const services  = loc?.services?.slice(0, 4) ?? [];
+  const extraSvcs = (loc?.services?.length ?? 0) - 4;
+  const orgName   = (loc?.org as any)?.name ?? "";
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: "14px", width: "100%", maxWidth: "480px", boxShadow: "0 24px 64px rgba(0,0,0,0.22)", overflow: "hidden" }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Modal header */}
+        <div style={{ background: DARK, padding: "1.5rem 1.75rem 1.25rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: TEAL, margin: "0 0 0.3rem" }}>Monthly Verification</p>
+              <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "#fff", margin: 0, lineHeight: 1.3 }}>Is your listing still accurate?</h2>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: "1.25rem", cursor: "pointer", lineHeight: 1, marginLeft: "1rem", flexShrink: 0 }}>✕</button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "1.5rem 1.75rem" }}>
+          {isLoading && <p style={{ color: MUTED, textAlign: "center", fontSize: "0.875rem" }}>Loading…</p>}
+
+          {!isLoading && loc && (
+            <>
+              {/* Resource card preview */}
+              <p style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.75rem" }}>Your current listing</p>
+              <div style={{ border: `1px solid ${BORDER}`, borderTop: `3px solid ${typeColor}`, borderRadius: "8px", overflow: "hidden", marginBottom: "1.25rem" }}>
+                <div style={{ padding: "14px 16px" }}>
+                  <p style={{ fontWeight: 700, fontSize: "0.9375rem", color: TEXT, margin: "0 0 3px" }}>{orgName}</p>
+                  {loc.name !== orgName && <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 5px" }}>{loc.name}</p>}
+                  <span style={{ display: "inline-block", background: `${typeColor}18`, color: typeColor, fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", padding: "2px 7px", borderRadius: "3px" }}>{typeLabel}</span>
+                  {loc.county && <p style={{ fontSize: "0.75rem", color: MUTED, margin: "5px 0 0", fontWeight: 500 }}>{loc.county} County</p>}
+                  {(loc.org as any)?.description && (
+                    <p style={{ fontSize: "0.78rem", color: TEXT, lineHeight: 1.55, margin: "7px 0 0", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {(loc.org as any).description}
+                    </p>
+                  )}
+                  {services.length > 0 && (
+                    <div style={{ marginTop: "8px" }}>
+                      {services.map(s => (
+                        <span key={s.name || s.category} style={{ display: "inline-block", background: BG, border: `1px solid ${BORDER}`, color: MUTED, fontSize: "0.7rem", fontWeight: 500, padding: "2px 7px", borderRadius: "4px", margin: "2px 3px 2px 0" }}>
+                          {s.name || s.category}
+                        </span>
+                      ))}
+                      {extraSvcs > 0 && (
+                        <span style={{ display: "inline-block", background: BG, border: `1px solid ${BORDER}`, color: MUTED, fontSize: "0.7rem", padding: "2px 7px", borderRadius: "4px", margin: "2px 0" }}>+{extraSvcs} more</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {primary && (
+                  <>
+                    <div style={{ height: 1, background: BORDER, margin: "0 16px" }} />
+                    <div style={{ padding: "10px 16px" }}>
+                      <p style={{ fontWeight: 700, fontSize: "0.8125rem", color: TEXT, margin: 0 }}>{primary.full_name}</p>
+                      {primary.title && <p style={{ fontSize: "0.72rem", color: MUTED, margin: "1px 0 0" }}>{primary.title}</p>}
+                      {primary.phone && <p style={{ fontWeight: 700, fontSize: "0.8125rem", color: DARK, margin: "3px 0 0" }}>{primary.phone}</p>}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {confirmed ? (
+                <div style={{ textAlign: "center", padding: "0.75rem 0" }}>
+                  <p style={{ fontSize: "2rem", margin: "0 0 0.5rem" }}>✅</p>
+                  <p style={{ fontWeight: 700, color: SAGE, margin: 0 }}>Listing confirmed — thank you!</p>
+                </div>
+              ) : (
+                <>
+                  {err && <p style={{ fontSize: "0.8125rem", color: "#DC2626", margin: "0 0 1rem" }}>{err}</p>}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <button
+                      onClick={handleConfirm}
+                      disabled={confirming}
+                      style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "8px", padding: "0.75rem", fontSize: "0.875rem", fontWeight: 700, cursor: confirming ? "default" : "pointer", fontFamily: "inherit" }}
+                    >
+                      {confirming ? "Confirming…" : "✓  Yes, this is correct"}
+                    </button>
+                    <button
+                      onClick={onClose}
+                      style={{ background: "#fff", color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: "8px", padding: "0.75rem", fontSize: "0.875rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      ✏️  Update something
+                    </button>
+                  </div>
+                  <p style={{ fontSize: "0.75rem", color: MUTED, textAlign: "center", margin: "0.75rem 0 0" }}>
+                    Confirming keeps this listing active. To update details, close and visit your dashboard or reply to your Lattice email.
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user, role, signOut } = useAuth();
   const { data: requests = [], isLoading } = useMyRequests();
   const requestsRef = useRef<HTMLDivElement>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [verifyLocationId, setVerifyLocationId] = useState<string | null>(null);
+
+  // Handle ?verify=listing&location=<id> from listing-check email links
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("verify") === "listing") {
+      const locId = params.get("location");
+      if (locId) {
+        setVerifyLocationId(locId);
+        // Clean the URL without triggering a navigation
+        const clean = window.location.pathname;
+        window.history.replaceState({}, "", clean);
+      }
+    }
+  }, []);
 
   const { data: announcements = [] } = useAnnouncements();
   const { data: savedIds = [], isLoading: savedLoading } = useSavedResources(user?.id);
@@ -157,6 +345,22 @@ export default function DashboardPage() {
       return data ?? null;
     },
     enabled: !!user,
+    networkMode: "always",
+    retry: false,
+  });
+
+  const { data: myLocations } = useQuery({
+    queryKey: ["my_locations", myOrg?.id],
+    queryFn: async () => {
+      if (!myOrg) return [];
+      const { data } = await supabase
+        .from("locations")
+        .select("id,name,location_type,county,city,is_active,is_verified")
+        .eq("org_id", myOrg.id)
+        .order("created_at");
+      return data ?? [];
+    },
+    enabled: !!myOrg,
     networkMode: "always",
     retry: false,
   });
@@ -314,6 +518,32 @@ export default function DashboardPage() {
                 {myOrg.is_active ? "Active" : "Pending approval"}
               </span>
             </div>
+            {myLocations && myLocations.length > 0 && (
+              <div style={{ marginTop: "1rem", borderTop: `1px solid ${BORDER}`, paddingTop: "1rem" }}>
+                <p style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.5rem" }}>
+                  Locations ({myLocations.length})
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  {myLocations.map(loc => (
+                    <div key={loc.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem" }}>
+                      <span style={{ color: loc.location_type === "virtual" ? "#7C6A9A" : loc.location_type === "mobile" ? "#C8622A" : TEAL, fontSize: "0.75rem" }}>
+                        {loc.location_type === "virtual" ? "⬡" : loc.location_type === "mobile" ? "⬟" : "●"}
+                      </span>
+                      <span style={{ color: TEXT, fontWeight: 500 }}>{loc.name}</span>
+                      {loc.county && <span style={{ color: MUTED }}>· {loc.county} Co.</span>}
+                      <span style={{
+                        marginLeft: "auto", fontSize: "0.68rem", fontWeight: 600,
+                        padding: "0.1rem 0.4rem", borderRadius: "4px",
+                        background: loc.is_verified ? "#ECFDF5" : "#F7F9F8",
+                        color: loc.is_verified ? SAGE : MUTED,
+                      }}>
+                        {loc.is_verified ? "Verified" : "Unverified"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -488,6 +718,7 @@ export default function DashboardPage() {
       </div>
     </div>
     {showProfile && <ProfileModal user={user} onClose={() => setShowProfile(false)} />}
+    {verifyLocationId && <ListingVerifyModal locationId={verifyLocationId} onClose={() => setVerifyLocationId(null)} />}
     </>
   );
 }
