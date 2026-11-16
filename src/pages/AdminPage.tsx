@@ -1518,6 +1518,7 @@ const REVIEW_TYPE_LABELS: Record<string, string> = {
   suspension_pending:      "Suspension Pending",
   poc_change_review:       "POC Change Review",
   contact_request_followup:"Contact Request Follow-up",
+  provider_followup:       "Provider Follow-up",
 };
 
 const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
@@ -1941,6 +1942,27 @@ function InvitationsAdmin() {
     },
   });
 
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState<Record<string, string>>({});
+
+  const resendInvitation = async (inv: AdminInvitation) => {
+    setResendingId(inv.invitation_id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invitation-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ invitation_id: inv.invitation_id }),
+      });
+      const json = await res.json();
+      setResendMsg(m => ({ ...m, [inv.invitation_id]: res.ok ? "Sent ✓" : (json?.error ?? "Failed") }));
+    } catch (e) {
+      setResendMsg(m => ({ ...m, [inv.invitation_id]: "Error" }));
+    } finally {
+      setResendingId(null);
+    }
+  };
+
   const fmtDate = (s: string) => new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const isExpired = (s: string) => new Date(s) < new Date();
 
@@ -1970,8 +1992,8 @@ function InvitationsAdmin() {
       {isLoading && <p style={{ color: MUTED }}>Loading…</p>}
       {!isLoading && (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
-            {["Email", "Organization", "Role", "Status", "Expires"].map(h => (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr 80px", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
+            {["Email", "Organization", "Role", "Status", "Expires", ""].map(h => (
               <p key={h} style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
             ))}
           </div>
@@ -1980,8 +2002,9 @@ function InvitationsAdmin() {
           )}
           {invitations.map(inv => {
             const sc = statusColor(inv);
+            const isPending = inv.status === "pending" && !isExpired(inv.expires_at);
             return (
-              <div key={inv.invitation_id} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr", gap: "1rem", padding: "0.9rem 1.25rem", alignItems: "center", borderBottom: `1px solid ${BORDER}` }}>
+              <div key={inv.invitation_id} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr 1fr 80px", gap: "1rem", padding: "0.9rem 1.25rem", alignItems: "center", borderBottom: `1px solid ${BORDER}` }}>
                 <div>
                   <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: 0 }}>{inv.invited_email}</p>
                   {inv.invited_name && <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{inv.invited_name}</p>}
@@ -1995,6 +2018,17 @@ function InvitationsAdmin() {
                   {statusLabel(inv)}
                 </span>
                 <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>{fmtDate(inv.expires_at)}</p>
+                <div>
+                  {isPending && (
+                    <button
+                      onClick={() => resendInvitation(inv)}
+                      disabled={resendingId === inv.invitation_id}
+                      style={{ fontSize: "0.72rem", fontWeight: 600, background: BG, border: `1px solid ${BORDER}`, color: TEXT, padding: "0.25rem 0.5rem", borderRadius: "4px", cursor: "pointer", whiteSpace: "nowrap" }}
+                    >
+                      {resendMsg[inv.invitation_id] ?? (resendingId === inv.invitation_id ? "…" : "Resend")}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -2015,6 +2049,14 @@ function BillingAdmin() {
   const [payRef, setPayRef]       = useState("");
   const [payMemo, setPayMemo]     = useState("");
   const [payError, setPayError]   = useState("");
+
+  // Extra seat billing state
+  const [seatLocId, setSeatLocId]     = useState<string | null>(null);
+  const [seatCount, setSeatCount]     = useState("1");
+  const [seatPreview, setSeatPreview] = useState<{ seat_rate_cents: number; prorated_cents: number; days_remaining: number; renewal_date: string; founder_rate_active: boolean; current_extra_seats: number } | null>(null);
+  const [seatPreviewLoading, setSeatPreviewLoading] = useState(false);
+  const [seatError, setSeatError]     = useState("");
+  const [seatSuccess, setSeatSuccess] = useState("");
 
   const recordPayment = useMutation({
     mutationFn: async () => {
@@ -2056,6 +2098,40 @@ function BillingAdmin() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] }),
   });
+
+  const addExtraSeats = useMutation({
+    mutationFn: async ({ locationId, seats, paymentCents }: { locationId: string; seats: number; paymentCents: number }) => {
+      const { error } = await supabase.rpc("admin_add_extra_seats", {
+        p_location_id: locationId,
+        p_seats: seats,
+        p_payment_amount_cents: paymentCents,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      setSeatSuccess("Seats added and payment recorded.");
+      setSeatPreview(null);
+      setSeatCount("1");
+      setSeatLocId(null);
+    },
+    onError: (e: Error) => setSeatError(e.message),
+  });
+
+  const fetchSeatPreview = async (locId: string, seats: number) => {
+    if (!locId || seats < 1) { setSeatPreview(null); return; }
+    setSeatPreviewLoading(true);
+    setSeatError("");
+    try {
+      const { data, error } = await supabase.rpc("admin_get_seat_billing_preview", { p_location_id: locId, p_seats: seats });
+      if (error) throw error;
+      setSeatPreview(data as typeof seatPreview);
+    } catch (e: unknown) {
+      setSeatError((e as Error).message);
+    } finally {
+      setSeatPreviewLoading(false);
+    }
+  };
 
   return (
     <div style={{ display: "flex", gap: "1.5rem", alignItems: "flex-start" }}>
@@ -2228,6 +2304,66 @@ function BillingAdmin() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Extra seat management */}
+            {billing.line_items.length > 0 && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
+                <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.875rem" }}>Add Extra Staff Seats</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 100px auto", gap: "0.75rem", alignItems: "flex-end", marginBottom: "0.75rem" }}>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Location</label>
+                    <select
+                      value={seatLocId ?? ""}
+                      onChange={e => { const v = e.target.value; setSeatLocId(v || null); setSeatPreview(null); setSeatSuccess(""); setSeatError(""); if (v) fetchSeatPreview(v, parseInt(seatCount) || 1); }}
+                      style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem" }}
+                    >
+                      <option value="">— select location —</option>
+                      {billing.line_items.map(li => (
+                        <option key={li.location_id} value={li.location_id}>{li.location_name} (current extra: {li.extra_staff_seats})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Seats to Add</label>
+                    <input
+                      type="number" min="1" value={seatCount}
+                      onChange={e => { setSeatCount(e.target.value); setSeatPreview(null); setSeatSuccess(""); setSeatError(""); }}
+                      onBlur={() => { if (seatLocId) fetchSeatPreview(seatLocId, parseInt(seatCount) || 1); }}
+                      style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => { if (seatLocId) fetchSeatPreview(seatLocId, parseInt(seatCount) || 1); }}
+                    disabled={!seatLocId || seatPreviewLoading}
+                    style={{ padding: "0.5rem 1rem", background: BG, border: `1px solid ${BORDER}`, color: TEXT, fontSize: "0.8125rem", fontWeight: 600, borderRadius: "5px", cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    {seatPreviewLoading ? "…" : "Preview"}
+                  </button>
+                </div>
+                {seatError && <p style={{ color: "#991B1B", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{seatError}</p>}
+                {seatSuccess && <p style={{ color: "#166534", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{seatSuccess}</p>}
+                {seatPreview && (
+                  <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "0.75rem" }}>
+                    <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", fontSize: "0.8125rem" }}>
+                      <div><span style={{ color: MUTED }}>Seat rate: </span><strong>{formatCents(seatPreview.seat_rate_cents)}/yr</strong>{seatPreview.founder_rate_active && <span style={{ marginLeft: "0.4rem", fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", fontWeight: 700, padding: "0.1rem 0.3rem", borderRadius: "3px" }}>Founder rate</span>}</div>
+                      <div><span style={{ color: MUTED }}>Days until renewal: </span><strong>{seatPreview.days_remaining}</strong> (renews {seatPreview.renewal_date})</div>
+                      <div style={{ fontSize: "1rem" }}><span style={{ color: MUTED }}>Prorated charge: </span><strong style={{ color: TEAL }}>{formatCents(seatPreview.prorated_cents)}</strong></div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (!seatLocId || !seatPreview) return;
+                        setSeatError("");
+                        addExtraSeats.mutate({ locationId: seatLocId, seats: parseInt(seatCount) || 1, paymentCents: seatPreview.prorated_cents });
+                      }}
+                      disabled={addExtraSeats.isPending}
+                      style={{ marginTop: "0.75rem", background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.5rem 1.25rem", borderRadius: "6px", cursor: "pointer" }}
+                    >
+                      {addExtraSeats.isPending ? "Recording…" : `Confirm — charge ${formatCents(seatPreview.prorated_cents)}`}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

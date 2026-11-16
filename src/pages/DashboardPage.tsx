@@ -607,6 +607,55 @@ export default function DashboardPage() {
     retry: false,
   });
 
+  // Membership row for invited staff (org_admin or staff role via invitation)
+  const { data: myMembership } = useQuery({
+    queryKey: ["my_membership", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("org_members")
+        .select("id,org_id,location_id,role,invitation_id,joined_at,status")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!user && !myOrg, // only needed when user is not an org owner
+    networkMode: "always",
+    retry: false,
+  });
+
+  // If user is an invited org_admin, also load their org info
+  const { data: staffOrg } = useQuery({
+    queryKey: ["staff_org", myMembership?.org_id],
+    queryFn: async () => {
+      if (!myMembership?.org_id) return null;
+      const { data } = await supabase
+        .from("organizations")
+        .select("id,name,org_type,county,membership_tier")
+        .eq("id", myMembership.org_id)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!myMembership?.org_id,
+    networkMode: "always",
+    retry: false,
+  });
+
+  // Gate status for invited staff
+  const { data: staffGate } = useQuery({
+    queryKey: ["staff_gate", myMembership?.org_id],
+    queryFn: async () => {
+      if (!myMembership?.org_id) return null;
+      const { data, error } = await supabase.rpc("check_staff_gate", { p_org_id: myMembership.org_id });
+      if (error) return null;
+      return data as { is_member: boolean; orientation_done: boolean; roe_done: boolean; can_use_tools: boolean; is_owner: boolean } | null;
+    },
+    enabled: !!myMembership?.org_id,
+    networkMode: "always",
+    retry: false,
+  });
+
   const { data: myLocations } = useQuery({
     queryKey: ["my_locations", myOrg?.id],
     queryFn: async () => {
@@ -742,6 +791,24 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Gate banner for invited staff with incomplete orientation/ROE */}
+        {myMembership?.invitation_id && staffGate && !staffGate.can_use_tools && (
+          <div style={{ backgroundColor: "#FFFBEB", border: `1px solid #FDE68A`, borderLeft: `4px solid #F59E0B`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
+            <p style={{ fontWeight: 700, color: "#92400E", margin: "0 0 0.5rem", fontSize: "0.9375rem" }}>Complete your onboarding to access coordination tools</p>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.875rem" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: staffGate.orientation_done ? "#166534" : "#92400E" }}>
+                {staffGate.orientation_done ? "✓" : "○"} Orientation
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: staffGate.roe_done ? "#166534" : "#92400E" }}>
+                {staffGate.roe_done ? "✓" : "○"} Rules of Engagement
+              </span>
+            </div>
+            <p style={{ color: "#92400E", margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
+              Your invitation link includes orientation and ROE steps. Once complete, you'll have full access.
+            </p>
+          </div>
+        )}
+
         {/* Status banner */}
         <div style={{ backgroundColor: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${TEAL}`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
           <span style={{ fontSize: "1.5rem" }}>✅</span>
@@ -752,6 +819,28 @@ export default function DashboardPage() {
             </p>
           </div>
         </div>
+
+        {/* Staff membership panel — shown when user is invited staff (not org owner) */}
+        {myMembership && !myOrg && staffOrg && (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${TEAL}`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
+            <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.75rem" }}>My Organization (Staff)</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+              <div>
+                <p style={{ fontWeight: 700, fontSize: "1rem", color: TEXT, margin: "0 0 0.25rem" }}>{staffOrg.name}</p>
+                <p style={{ fontSize: "0.8125rem", color: MUTED, margin: 0 }}>
+                  {staffOrg.county ? `${staffOrg.county} County · ` : ""}
+                  Role: <strong>{myMembership.role === "org_admin" ? "Organization Admin" : "Staff"}</strong>
+                  {myMembership.joined_at ? ` · Joined ${new Date(myMembership.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}` : ""}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.6rem", borderRadius: "9999px", background: staffGate?.can_use_tools ? "#ECFDF5" : "#FEF9C3", color: staffGate?.can_use_tools ? SAGE : "#92400E", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {staffGate?.can_use_tools ? "Onboarding complete" : "Onboarding pending"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Your Organization */}
         {myOrg && (
@@ -810,6 +899,14 @@ export default function DashboardPage() {
           <StaffPanel
             orgId={myOrg.id}
             locationId={myLocations && myLocations.length > 0 ? myLocations[0].id : null}
+          />
+        )}
+
+        {/* Staff panel — shown when the user is an invited org_admin */}
+        {!myOrg && myMembership?.role === "org_admin" && myMembership.org_id && (
+          <StaffPanel
+            orgId={myMembership.org_id}
+            locationId={myMembership.location_id ?? null}
           />
         )}
 
