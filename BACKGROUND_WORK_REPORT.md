@@ -84,9 +84,22 @@ The following require manual browser testing:
 
 ---
 
+## Resolved After Initial Report
+
+- **Invitation email** — replaced edge function approach with a pg_net database trigger (`trg_send_invitation_email`). Resend API key stored in Supabase Vault. Trigger fires on every `staff_invitations` INSERT. Tested live: delivery confirmed to founder inbox. Committed `f118a70`.
+- **seedxga.com domain** — confirmed already verified in Resend with sending enabled. No action needed.
+- **`admin_get_all_invitations` RPC** — confirmed present in DB.
+
 ## Known Gaps / Follow-on Work
 
-- `admin_get_all_invitations` RPC: referenced in AdminPage but may not exist in DB. Needs to be created if not present (returns all staff_invitations joined with org/location names).
-- Edge function deploy: `supabase functions deploy send-invitation-email` has not been run — the function file is committed but not deployed to Supabase Edge. Run this before the Resend button is live.
-- Content admin view (orientation/ROE editor) was deferred — not implemented in this phase.
-- Automated DB tests (Task 7) were not implemented — complexity exceeded session scope; browser-only tests documented above instead.
+- **Orientation/ROE content editor UI** — deferred. Content can currently only be updated via direct SQL (`admin_upsert_orientation` / `admin_upsert_roe` RPCs exist). Low urgency while content is in draft.
+- **Automated DB test suite** — deferred. Browser-only test matrix documented above.
+
+## Founder Inputs Required Before Launch
+
+- Final orientation content (replace `[TEST]` placeholder)
+- Final Rules of Engagement (legal review required before publishing)
+- Fractional service allowance rounding policy
+- Seat-reduction over-capacity enforcement policy
+- Sunday reminder send time/timezone (schedules remain disabled)
+- Cross-location staff assignment policy (not built; no pooling)
