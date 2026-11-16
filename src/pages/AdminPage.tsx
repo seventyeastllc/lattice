@@ -1877,7 +1877,10 @@ interface OrgBillingSummary {
   line_items: BillingLineItem[];
   payments: BillingPayment[];
   service_allowances: ServiceAllowance[];
-  pending_change: { change_type: string; new_tier: string | null; change_notes: string | null } | null;
+  pending_change: {
+    change_type: string; new_tier: string | null; change_notes: string | null;
+    selected_removal_ids: string[] | null; new_extra_staff_seats: number | null;
+  } | null;
 }
 
 interface BillingOrg {
@@ -2053,6 +2056,13 @@ function BillingAdmin() {
   const [seatError, setSeatError]     = useState("");
   const [seatSuccess, setSeatSuccess] = useState("");
 
+  // Seat reduction state
+  const [reductionOpen, setReductionOpen]       = useState(false);
+  const [reductionSelections, setReductionSels] = useState<string[]>([]);
+  const [reductionNewTotal, setReductionTotal]  = useState<number | null>(null);
+  const [reductionError, setReductionError]     = useState("");
+  const [reductionSuccess, setReductionSuccess] = useState("");
+
   const recordPayment = useMutation({
     mutationFn: async () => {
       if (!selectedOrgId) return;
@@ -2111,6 +2121,54 @@ function BillingAdmin() {
       setSeatLocId(null);
     },
     onError: (e: Error) => setSeatError(e.message),
+  });
+
+  // Staff list for the selected org (admin view, for reduction selection)
+  const { data: orgStaff = [] } = useQuery({
+    queryKey: ["admin-org-staff", selectedOrgId],
+    queryFn: async () => {
+      if (!selectedOrgId) return [];
+      const { data, error } = await supabase.rpc("admin_get_org_staff", { p_org_id: selectedOrgId });
+      if (error) throw error;
+      return (data as unknown as Array<{ member_id: string; display_name: string | null; email: string; role: string; location_name: string | null; joined_at: string | null; is_poc: boolean }>) ?? [];
+    },
+    enabled: !!selectedOrgId,
+  });
+
+  const scheduleReduction = useMutation({
+    mutationFn: async ({ newTotal, removalIds }: { newTotal: number; removalIds: string[] }) => {
+      if (!selectedOrgId) return;
+      const { data, error } = await supabase.rpc("org_schedule_seat_reduction", {
+        p_org_id: selectedOrgId,
+        p_new_total_seats: newTotal,
+        p_removal_ids: removalIds,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      setReductionSuccess("Seat reduction scheduled. It will apply at next renewal.");
+      setReductionOpen(false);
+      setReductionSels([]);
+      setReductionTotal(null);
+    },
+    onError: (e: Error) => setReductionError(e.message),
+  });
+
+  const applyReduction = useMutation({
+    mutationFn: async () => {
+      if (!selectedOrgId) return;
+      const { data, error } = await supabase.rpc("admin_apply_seat_reduction", { p_org_id: selectedOrgId });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      qc.invalidateQueries({ queryKey: ["admin-org-staff", selectedOrgId] });
+      setReductionSuccess("Seat reduction applied successfully.");
+    },
+    onError: (e: Error) => setReductionError(e.message),
   });
 
   const fetchSeatPreview = async (locId: string, seats: number) => {
@@ -2188,7 +2246,9 @@ function BillingAdmin() {
                     )}
                     {billing.pending_change && (
                       <span style={{ fontSize: "0.68rem", background: "#FEE2E2", color: "#991B1B", fontWeight: 700, padding: "0.1rem 0.4rem", borderRadius: "3px" }}>
-                        Pending: {billing.pending_change.change_type} → {billing.pending_change.new_tier}
+                        Pending: {billing.pending_change.change_type === "seat_reduction"
+                          ? `seat reduction (${billing.pending_change.selected_removal_ids?.length ?? "?"} removals at renewal)`
+                          : `${billing.pending_change.change_type} → ${billing.pending_change.new_tier}`}
                       </span>
                     )}
                   </div>
@@ -2361,6 +2421,179 @@ function BillingAdmin() {
                 )}
               </div>
             )}
+
+            {/* Schedule / apply seat reduction */}
+            {billing.line_items.some(li => li.extra_staff_seats > 0) && (() => {
+              const hasPending = billing.pending_change?.change_type === "seat_reduction";
+
+              return (
+                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                    <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: 0 }}>
+                      Schedule Seat Reduction
+                    </p>
+                    {hasPending && (
+                      <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "4px" }}>
+                        Reduction scheduled
+                      </span>
+                    )}
+                  </div>
+
+                  {reductionError && <p style={{ color: "#991B1B", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{reductionError}</p>}
+                  {reductionSuccess && <p style={{ color: "#166534", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{reductionSuccess}</p>}
+
+                  {/* Show existing pending reduction */}
+                  {hasPending && billing.pending_change && (
+                    <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "0.75rem" }}>
+                      <p style={{ fontSize: "0.8125rem", color: "#92400E", margin: "0 0 0.5rem", fontWeight: 600 }}>
+                        {billing.pending_change.change_notes}
+                      </p>
+                      {billing.pending_change.selected_removal_ids && (
+                        <p style={{ fontSize: "0.78rem", color: "#92400E", margin: "0 0 0.5rem" }}>
+                          {billing.pending_change.selected_removal_ids.length} member(s) selected for removal
+                        </p>
+                      )}
+                      <button
+                        onClick={() => { setReductionError(""); applyReduction.mutate(); }}
+                        disabled={applyReduction.isPending}
+                        style={{ background: "#92400E", border: "none", color: "#fff", fontWeight: 700, fontSize: "0.8125rem", padding: "0.4rem 1rem", borderRadius: "5px", cursor: "pointer" }}
+                      >
+                        {applyReduction.isPending ? "Applying…" : "Apply at Renewal"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Reduction scheduling form */}
+                  {!hasPending && (
+                    <>
+                      {!reductionOpen ? (
+                        <button
+                          onClick={() => { setReductionOpen(true); setReductionError(""); setReductionSuccess(""); setReductionSels([]); setReductionTotal(null); }}
+                          style={{ fontSize: "0.8125rem", background: BG, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: "5px", padding: "0.4rem 1rem", cursor: "pointer" }}
+                        >
+                          Schedule a reduction…
+                        </button>
+                      ) : (
+                        <div>
+                          <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.75rem" }}>
+                            Select staff members to remove at renewal. The number selected must match the reduction amount.
+                          </p>
+
+                          {/* New total seats input */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
+                            <label style={{ fontSize: "0.78rem", color: TEXT, fontWeight: 600 }}>New total seats:</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={orgStaff.length}
+                              value={reductionNewTotal ?? ""}
+                              onChange={e => { setReductionTotal(parseInt(e.target.value) || null); setReductionSels([]); setReductionError(""); }}
+                              style={{ width: 80, padding: "0.4rem 0.5rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem" }}
+                            />
+                            {reductionNewTotal != null && (
+                              <span style={{ fontSize: "0.78rem", color: MUTED }}>
+                                (remove {Math.max(0, (orgStaff.length) - reductionNewTotal)} of {orgStaff.length} active staff)
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Staff selection checkboxes */}
+                          {orgStaff.length === 0 && (
+                            <p style={{ fontSize: "0.78rem", color: MUTED, fontStyle: "italic" }}>No active staff members found.</p>
+                          )}
+                          {orgStaff.length > 0 && reductionNewTotal != null && (() => {
+                            const toRemove = orgStaff.length - reductionNewTotal;
+                            return (
+                              <div style={{ border: `1px solid ${BORDER}`, borderRadius: "6px", overflow: "hidden", marginBottom: "0.875rem" }}>
+                                {orgStaff.map((m, i) => {
+                                  const checked = reductionSelections.includes(m.member_id);
+                                  const tooMany = !checked && reductionSelections.length >= toRemove;
+                                  return (
+                                    <label key={m.member_id} style={{
+                                      display: "flex", alignItems: "center", gap: "0.75rem",
+                                      padding: "0.6rem 0.875rem",
+                                      borderBottom: i < orgStaff.length - 1 ? `1px solid ${BORDER}` : "none",
+                                      background: checked ? "#FEF3C7" : SURFACE,
+                                      cursor: tooMany ? "not-allowed" : "pointer",
+                                      opacity: tooMany ? 0.5 : 1,
+                                    }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={tooMany}
+                                        onChange={e => {
+                                          if (e.target.checked) setReductionSels(s => [...s, m.member_id]);
+                                          else setReductionSels(s => s.filter(id => id !== m.member_id));
+                                        }}
+                                      />
+                                      <div style={{ flex: 1 }}>
+                                        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT }}>
+                                          {m.display_name ?? m.email}
+                                        </span>
+                                        <span style={{ fontSize: "0.75rem", color: MUTED, marginLeft: "0.5rem" }}>{m.email}</span>
+                                        {m.location_name && <span style={{ fontSize: "0.72rem", color: MUTED, marginLeft: "0.5rem" }}>· {m.location_name}</span>}
+                                        {m.is_poc && (
+                                          <span style={{ marginLeft: "0.5rem", fontSize: "0.65rem", background: "#FEE2E2", color: "#991B1B", fontWeight: 700, padding: "0.1rem 0.3rem", borderRadius: "3px" }}>
+                                            POC — will trigger review
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span style={{ fontSize: "0.72rem", color: MUTED, textTransform: "capitalize" }}>{m.role}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Preview + confirm */}
+                          {reductionNewTotal != null && reductionSelections.length === orgStaff.length - reductionNewTotal && reductionSelections.length > 0 && (
+                            <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "0.75rem" }}>
+                              <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.3rem" }}>
+                                Confirm reduction: {orgStaff.length} → {reductionNewTotal} seats
+                              </p>
+                              <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.75rem" }}>
+                                {reductionSelections.length} staff member(s) will lose access at next renewal.
+                                {orgStaff.filter(m => reductionSelections.includes(m.member_id) && m.is_poc).length > 0 &&
+                                  " POC-change verification will be triggered for affected locations."}
+                              </p>
+                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                                <button
+                                  onClick={() => {
+                                    if (!reductionNewTotal) return;
+                                    setReductionError("");
+                                    scheduleReduction.mutate({ newTotal: reductionNewTotal, removalIds: reductionSelections });
+                                  }}
+                                  disabled={scheduleReduction.isPending}
+                                  style={{ background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.875rem", padding: "0.5rem 1.25rem", borderRadius: "6px", cursor: "pointer" }}
+                                >
+                                  {scheduleReduction.isPending ? "Scheduling…" : "Schedule Reduction"}
+                                </button>
+                                <button
+                                  onClick={() => { setReductionOpen(false); setReductionSels([]); setReductionTotal(null); setReductionError(""); }}
+                                  style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT, fontSize: "0.875rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!reductionNewTotal && (
+                            <button
+                              onClick={() => { setReductionOpen(false); setReductionSels([]); }}
+                              style={{ fontSize: "0.8125rem", background: BG, border: `1px solid ${BORDER}`, color: MUTED, borderRadius: "5px", padding: "0.4rem 0.75rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Record payment */}
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
