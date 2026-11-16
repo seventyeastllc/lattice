@@ -607,23 +607,25 @@ export default function DashboardPage() {
     retry: false,
   });
 
-  // Membership row for invited staff (org_admin or staff role via invitation)
-  const { data: myMembership } = useQuery({
-    queryKey: ["my_membership", user?.id],
+  // All active memberships for invited staff (supports multi-location)
+  const { data: myMemberships = [] } = useQuery({
+    queryKey: ["my_memberships", user?.id],
     queryFn: async () => {
-      if (!user) return null;
+      if (!user) return [];
       const { data } = await supabase
         .from("org_members")
         .select("id,org_id,location_id,role,invitation_id,joined_at,status")
         .eq("user_id", user.id)
-        .eq("status", "active")
-        .maybeSingle();
-      return data ?? null;
+        .eq("status", "active");
+      return data ?? [];
     },
-    enabled: !!user && !myOrg, // only needed when user is not an org owner
+    enabled: !!user && !myOrg,
     networkMode: "always",
     retry: false,
   });
+
+  // Primary membership (first row — used for org-level lookups)
+  const myMembership = myMemberships[0] ?? null;
 
   // If user is an invited org_admin, also load their org info
   const { data: staffOrg } = useQuery({
@@ -792,7 +794,7 @@ export default function DashboardPage() {
         )}
 
         {/* Gate banner for invited staff with incomplete orientation/ROE */}
-        {myMembership?.invitation_id && staffGate && !staffGate.can_use_tools && (
+        {myMemberships.length > 0 && !myOrg && staffGate && !staffGate.can_use_tools && (
           <div style={{ backgroundColor: "#FFFBEB", border: `1px solid #FDE68A`, borderLeft: `4px solid #F59E0B`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
             <p style={{ fontWeight: 700, color: "#92400E", margin: "0 0 0.5rem", fontSize: "0.9375rem" }}>Complete your onboarding to access coordination tools</p>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.875rem" }}>
@@ -820,24 +822,36 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Staff membership panel — shown when user is invited staff (not org owner) */}
-        {myMembership && !myOrg && staffOrg && (
+        {/* My Account — shown when user is invited staff (not org owner) */}
+        {myMemberships.length > 0 && !myOrg && staffOrg && (
           <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${TEAL}`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
-            <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.75rem" }}>My Organization (Staff)</p>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: "1rem", color: TEXT, margin: "0 0 0.25rem" }}>{staffOrg.name}</p>
-                <p style={{ fontSize: "0.8125rem", color: MUTED, margin: 0 }}>
-                  {staffOrg.county ? `${staffOrg.county} County · ` : ""}
-                  Role: <strong>{myMembership.role === "org_admin" ? "Organization Admin" : "Staff"}</strong>
-                  {myMembership.joined_at ? ` · Joined ${new Date(myMembership.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}` : ""}
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.6rem", borderRadius: "9999px", background: staffGate?.can_use_tools ? "#ECFDF5" : "#FEF9C3", color: staffGate?.can_use_tools ? SAGE : "#92400E", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  {staffGate?.can_use_tools ? "Onboarding complete" : "Onboarding pending"}
-                </span>
-              </div>
+            <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED, margin: "0 0 0.75rem" }}>My Account</p>
+            <p style={{ fontWeight: 700, fontSize: "1rem", color: TEXT, margin: "0 0 0.5rem" }}>{staffOrg.name}</p>
+
+            {/* Onboarding status */}
+            <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.8rem", color: staffGate?.orientation_done ? "#166534" : "#92400E" }}>
+                {staffGate?.orientation_done ? "✓" : "○"} Orientation {staffGate?.orientation_done ? "complete" : "pending"}
+              </span>
+              <span style={{ fontSize: "0.8rem", color: staffGate?.roe_done ? "#166534" : "#92400E" }}>
+                {staffGate?.roe_done ? "✓" : "○"} Rules of Engagement {staffGate?.roe_done ? "acknowledged" : "pending"}
+              </span>
+            </div>
+
+            {/* All location assignments */}
+            <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+              <p style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: "0 0 0.5rem" }}>
+                Location Assignments ({myMemberships.length})
+              </p>
+              {myMemberships.map((m: { id: string; location_id: string | null; role: string; joined_at: string | null }) => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", padding: "0.3rem 0" }}>
+                  <span style={{ color: TEAL }}>●</span>
+                  <span style={{ color: TEXT, fontWeight: 500 }}>{m.location_id ?? "No location"}</span>
+                  <span style={{ color: MUTED }}>·</span>
+                  <span style={{ color: MUTED }}>{m.role === "org_admin" ? "Organization Admin" : "Staff"}</span>
+                  {m.joined_at && <span style={{ color: MUTED, marginLeft: "auto" }}>Joined {new Date(m.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -903,7 +917,7 @@ export default function DashboardPage() {
         )}
 
         {/* Staff panel — shown when the user is an invited org_admin */}
-        {!myOrg && myMembership?.role === "org_admin" && myMembership.org_id && (
+        {!myOrg && myMembership?.role === "org_admin" && myMembership?.org_id && (
           <StaffPanel
             orgId={myMembership.org_id}
             locationId={myMembership.location_id ?? null}

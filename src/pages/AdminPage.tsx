@@ -262,7 +262,7 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing" | "invitations";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing" | "invitations" | "content";
 
 function Sidebar({
   view, setView, onSignOut,
@@ -283,6 +283,7 @@ function Sidebar({
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
     { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
     { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
+    { id: "content"       as View, label: "Content",       icon: "📄", badge: 0 },
   ];
 
   return (
@@ -1948,14 +1949,8 @@ function InvitationsAdmin() {
   const resendInvitation = async (inv: AdminInvitation) => {
     setResendingId(inv.invitation_id);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invitation-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ invitation_id: inv.invitation_id }),
-      });
-      const json = await res.json();
-      setResendMsg(m => ({ ...m, [inv.invitation_id]: res.ok ? "Sent ✓" : (json?.error ?? "Failed") }));
+      const { error } = await supabase.rpc("admin_resend_invitation", { p_invitation_id: inv.invitation_id });
+      setResendMsg(m => ({ ...m, [inv.invitation_id]: error ? (error.message ?? "Failed") : "Sent ✓" }));
     } catch (e) {
       setResendMsg(m => ({ ...m, [inv.invitation_id]: "Error" }));
     } finally {
@@ -2433,6 +2428,124 @@ function BillingAdmin() {
   );
 }
 
+// ─── Content Administration ───────────────────────────────────────────────────
+function ContentAdmin() {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"orientation" | "roe">("orientation");
+  const [form, setForm] = useState({ version: "", title: "", body_html: "", is_test: false });
+  const [preview, setPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const { data: orientations = [] } = useQuery({
+    queryKey: ["admin_orientations"],
+    queryFn: async () => {
+      const { data } = await supabase.from("orientation_content").select("*").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const { data: roes = [] } = useQuery({
+    queryKey: ["admin_roes"],
+    queryFn: async () => {
+      const { data } = await supabase.from("roe_content").select("*").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const versions = tab === "orientation" ? orientations : roes;
+
+  const handleSave = async () => {
+    setSaving(true); setMsg(null);
+    const rpc = tab === "orientation" ? "admin_upsert_orientation" : "admin_upsert_roe";
+    const { error } = await supabase.rpc(rpc, {
+      p_version: form.version, p_title: form.title,
+      p_body_html: form.body_html, p_is_test: form.is_test,
+    });
+    setSaving(false);
+    if (error) { setMsg(`Error: ${error.message}`); return; }
+    setMsg("Saved");
+    setForm({ version: "", title: "", body_html: "", is_test: false });
+    qc.invalidateQueries({ queryKey: [`admin_${tab === "orientation" ? "orientations" : "roes"}`] });
+  };
+
+  const sanitize = (html: string) => html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+
+  return (
+    <div>
+      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 1.5rem" }}>Content Administration</h1>
+
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+        {(["orientation", "roe"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ padding: "0.5rem 1.25rem", borderRadius: 8, border: "none", cursor: "pointer",
+              background: tab === t ? TEAL : BORDER, color: tab === t ? "#fff" : TEXT, fontWeight: 600 }}>
+            {t === "orientation" ? "Orientation" : "Rules of Engagement"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+        {/* Existing versions */}
+        <div style={{ background: SURFACE, borderRadius: 12, padding: "1.25rem", border: `1px solid ${BORDER}` }}>
+          <h2 style={{ fontSize: "0.9rem", fontWeight: 700, color: TEXT, margin: "0 0 1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            {tab === "orientation" ? "Orientation" : "ROE"} Versions
+          </h2>
+          {versions.length === 0 && <p style={{ color: MUTED, fontSize: "0.875rem" }}>No versions yet.</p>}
+          {versions.map((v: { id: string; version: string; title: string; is_active: boolean; is_test: boolean; created_at: string }) => (
+            <div key={v.id} style={{ padding: "0.75rem", borderRadius: 8, background: BG, marginBottom: "0.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <span style={{ fontWeight: 600, fontSize: "0.875rem", color: TEXT }}>{v.version}</span>
+                <span style={{ marginLeft: "0.5rem", fontSize: "0.8rem", color: MUTED }}>{v.title}</span>
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                {v.is_active && <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "9999px", background: "#DCFCE7", color: "#166534", textTransform: "uppercase" }}>Active</span>}
+                {v.is_test && <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: "9999px", background: "#FEF9C3", color: "#854D0E", textTransform: "uppercase" }}>Test</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* New version form */}
+        <div style={{ background: SURFACE, borderRadius: 12, padding: "1.25rem", border: `1px solid ${BORDER}` }}>
+          <h2 style={{ fontSize: "0.9rem", fontWeight: 700, color: TEXT, margin: "0 0 1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>New Version</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <input value={form.version} onChange={e => setForm(f => ({ ...f, version: e.target.value }))}
+              placeholder="Version (e.g. 2026-11)" style={{ padding: "0.5rem 0.75rem", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: "0.875rem" }} />
+            <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="Title" style={{ padding: "0.5rem 0.75rem", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: "0.875rem" }} />
+            <textarea value={form.body_html} onChange={e => setForm(f => ({ ...f, body_html: e.target.value }))}
+              placeholder="HTML content" rows={8}
+              style={{ padding: "0.5rem 0.75rem", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: "0.8rem", fontFamily: "monospace", resize: "vertical" }} />
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: MUTED, cursor: "pointer" }}>
+              <input type="checkbox" checked={form.is_test} onChange={e => setForm(f => ({ ...f, is_test: e.target.checked }))} />
+              Mark as test content [TEST]
+            </label>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button onClick={() => setPreview(p => !p)}
+                style={{ padding: "0.5rem 1rem", borderRadius: 8, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, fontWeight: 600, cursor: "pointer", fontSize: "0.875rem" }}>
+                {preview ? "Hide preview" : "Preview"}
+              </button>
+              <button onClick={handleSave} disabled={saving || !form.version || !form.title || !form.body_html}
+                style={{ padding: "0.5rem 1rem", borderRadius: 8, border: "none", background: TEAL, color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.875rem", opacity: saving ? 0.6 : 1 }}>
+                {saving ? "Saving…" : "Publish"}
+              </button>
+            </div>
+            {msg && <p style={{ color: msg.startsWith("Error") ? "#991B1B" : "#166534", fontSize: "0.875rem", margin: 0 }}>{msg}</p>}
+          </div>
+        </div>
+      </div>
+
+      {preview && form.body_html && (
+        <div style={{ background: SURFACE, borderRadius: 12, padding: "1.5rem", border: `1px solid ${BORDER}`, marginTop: "1.5rem" }}>
+          <h2 style={{ fontSize: "0.9rem", fontWeight: 700, color: TEXT, margin: "0 0 1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Preview</h2>
+          <div dangerouslySetInnerHTML={{ __html: sanitize(form.body_html) }} style={{ fontSize: "0.9rem", lineHeight: 1.6, color: TEXT }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [view, setView] = useState<View>("overview");
   const { signOut } = useAuth();
@@ -2459,6 +2572,7 @@ export default function AdminPage() {
     crm:           <CRMView />,
     knowledge:     <KnowledgeLibrary />,
     announcements: <AnnouncementsAdmin />,
+    content:       <ContentAdmin />,
   }[view];
 
   return (
