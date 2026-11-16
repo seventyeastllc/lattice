@@ -7,6 +7,9 @@ export interface MyRequest {
   status: string;
   created_at: string;
   notes: string | null;
+  ack_deadline: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
   target_org: { name: string; org_type: string | null } | null;
 }
 
@@ -24,7 +27,7 @@ export function useMyRequests() {
       const { data, error } = await supabase
         .from("connection_requests")
         .select(`
-          id, status, created_at, notes,
+          id, status, created_at, notes, ack_deadline, acknowledged_at, resolved_at,
           target_org:organizations!connection_requests_target_organization_id_fkey(name, org_type)
         `)
         .eq("requesting_user_id", user.id)

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useMyRequests } from "@/hooks/useMyRequests";
+import { useIncomingRequests } from "@/hooks/useIncomingRequests";
 import { useSavedResources } from "@/hooks/useSavedResources";
 import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { supabase } from "@/lib/supabase";
@@ -28,8 +29,20 @@ const ORG_TYPE_LABELS: Record<string, string> = {
   other:       "Other",
 };
 
-function hoursAgo(dateStr: string) {
-  return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60);
+function isAckOverdue(req: { acknowledged_at: string | null; ack_deadline: string | null; status: string }) {
+  if (req.acknowledged_at) return false;
+  if (req.status === "resolved" || req.status === "closed") return false;
+  if (!req.ack_deadline) return false;
+  return new Date() > new Date(req.ack_deadline);
+}
+
+function fmtDeadline(isoStr: string | null) {
+  if (!isoStr) return null;
+  return new Date(isoStr).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    hour12: true, timeZoneName: "short",
+  });
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -658,6 +671,23 @@ export default function DashboardPage() {
     retry: false,
   });
 
+  // Incoming connection requests targeted at this user's organization
+  const incomingOrgId = myOrg?.id ?? staffOrg?.id ?? null;
+  const { data: incomingRequests = [], refetch: refetchIncoming } = useIncomingRequests(incomingOrgId);
+
+  const qcDash = useQueryClient();
+  const acknowledgeRequest = useMutation({
+    mutationFn: async (reqId: string) => {
+      const { data, error } = await supabase.rpc("acknowledge_connection_request", { p_request_id: reqId });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+  });
+
   const { data: myLocations } = useQuery({
     queryKey: ["my_locations", myOrg?.id],
     queryFn: async () => {
@@ -680,7 +710,7 @@ export default function DashboardPage() {
   // Stats
   const total    = requests.length;
   const open     = requests.filter(r => r.status === "pending" || r.status === "active").length;
-  const flagged  = requests.filter(r => r.status === "pending" && hoursAgo(r.created_at) >= 72).length;
+  const flagged  = requests.filter(r => isAckOverdue(r)).length;
   const resolved = requests.filter(r => r.status === "resolved" || r.status === "closed").length;
 
   // Top 3 referral categories by org_type of target org
@@ -769,7 +799,7 @@ export default function DashboardPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginBottom: "2.5rem" }}>
           <StatTile label="Referrals Sent"  value={total}    color={DARK} />
           <StatTile label="Open / Pending"  value={open}     color={TEAL} sub={open === 0 ? "All clear" : "Pending TSE review"} />
-          <StatTile label="No Response 72h" value={flagged}  color={flagged > 0 ? "#991B1B" : SAGE} sub={flagged > 0 ? "TSE will follow up" : "All on track"} />
+          <StatTile label="Ack. Overdue" value={flagged}  color={flagged > 0 ? "#991B1B" : SAGE} sub={flagged > 0 ? "Past 2-business-day deadline" : "All within deadline"} />
           <StatTile label="Resolved"        value={resolved} color={SAGE} />
         </div>
 
@@ -981,12 +1011,13 @@ export default function DashboardPage() {
             )}
 
             {!isLoading && requests.map((req) => {
-              const is72hr = req.status === "pending" && hoursAgo(req.created_at) >= 72;
+              const overdue = isAckOverdue(req);
+              const deadline = fmtDeadline(req.ack_deadline);
               return (
                 <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  {is72hr && (
+                  {overdue && (
                     <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.35rem 1.25rem" }}>
-                      <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ No response in 72+ hours — TSE has been notified</span>
+                      <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue (2 business days) — TSE has been notified</span>
                     </div>
                   )}
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr", gap: "1rem", padding: "1rem 1.25rem", alignItems: "center" }}>
@@ -1000,7 +1031,17 @@ export default function DashboardPage() {
                         </p>
                       )}
                     </div>
-                    <p style={{ color: MUTED, fontSize: "0.8rem", margin: 0 }}>{fmtDate(req.created_at)}</p>
+                    <div>
+                      <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
+                      {deadline && !req.acknowledged_at && req.status !== "resolved" && req.status !== "closed" && (
+                        <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>
+                          Ack. by {deadline}
+                        </p>
+                      )}
+                      {req.acknowledged_at && (
+                        <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
+                      )}
+                    </div>
                     <StatusBadge status={req.status} />
                     <div />
                   </div>
@@ -1015,6 +1056,71 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
+
+        {/* Incoming Connection Requests (for providers) */}
+        {incomingOrgId && incomingRequests.length > 0 && (
+          <div style={{ marginTop: "3rem" }}>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: TEXT, margin: "0 0 1.25rem" }}>Incoming Requests</h2>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
+                {["From", "Received / Deadline", "Status", ""].map(h => (
+                  <p key={h} style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
+                ))}
+              </div>
+              {incomingRequests.map(req => {
+                const overdue = req.is_ack_overdue;
+                const dl = fmtDeadline(req.ack_deadline);
+                const typeLabels: Record<string, string> = {
+                  facilitated_connection: "Facilitated Connection",
+                  case_conference: "Case Conference",
+                  information_only: "Information Only",
+                };
+                return (
+                  <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    {overdue && (
+                      <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.3rem 1.25rem" }}>
+                        <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue — please respond</span>
+                      </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", padding: "1rem 1.25rem", alignItems: "center" }}>
+                      <div>
+                        <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>
+                          {req.requester_org ?? req.requester_name ?? "—"}
+                        </p>
+                        <p style={{ color: MUTED, fontSize: "0.72rem", margin: 0 }}>{typeLabels[req.request_type] ?? req.request_type}</p>
+                        {req.notes && <p style={{ color: MUTED, fontSize: "0.72rem", margin: "0.1rem 0 0", fontStyle: "italic" }}>{req.notes}</p>}
+                      </div>
+                      <div>
+                        <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
+                        {!req.acknowledged_at && dl && (
+                          <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>Ack. by {dl}</p>
+                        )}
+                        {req.acknowledged_at && (
+                          <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
+                        )}
+                      </div>
+                      <StatusBadge status={req.status} />
+                      <div>
+                        {!req.acknowledged_at && (
+                          <button
+                            onClick={() => acknowledgeRequest.mutate(req.id)}
+                            disabled={acknowledgeRequest.isPending}
+                            style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            Acknowledge
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: "0.75rem", color: MUTED, marginTop: "0.5rem" }}>
+              Acknowledge within 2 business days (Mon–Fri, Eastern Time). TSE is copied on all requests.
+            </p>
+          </div>
+        )}
 
         {/* Saved Organizations */}
         <div style={{ marginTop: "3rem" }}>

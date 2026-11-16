@@ -58,9 +58,6 @@ function parseNote(raw: string | null): { from_name: string; from_org: string; f
   return { from_name, from_org, from_phone, hmis_id, note };
 }
 
-function hoursAgo(dateStr: string): number {
-  return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60);
-}
 
 function fmt(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -156,14 +153,9 @@ function useConnectionRequests() {
   return useQuery({
     queryKey: ["admin-requests"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("connection_requests")
-        .select(`id, notes, status, created_at, request_type,
-                 target_org:organizations!connection_requests_target_organization_id_fkey(name),
-                 target_contact:contacts!connection_requests_target_contact_id_fkey(full_name, title)`)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("admin_get_connection_requests");
       if (error) throw error;
-      return (data ?? []) as unknown as RawRequest[];
+      return (data as unknown as RawRequest[]) ?? [];
     },
   });
 }
@@ -174,8 +166,14 @@ interface RawRequest {
   status: string;
   created_at: string;
   request_type: string | null;
-  target_org: { name: string } | null;
-  target_contact: { full_name: string; title: string | null } | null;
+  ack_deadline: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  is_ack_overdue: boolean;
+  target_org_id: string | null;
+  target_org_name: string | null;
+  requester_name: string | null;
+  requester_email: string | null;
 }
 
 // All active orgs
@@ -399,7 +397,7 @@ function Overview({ setView }: { setView: (v: View) => void }) {
               <div key={req.id} style={{ padding: "0.875rem 1.25rem", borderBottom: `1px solid ${BORDER}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {from_org} → {req.target_org?.name ?? "—"}
+                    {from_org} → {req.target_org_name ?? "—"}
                   </p>
                   <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{from_name}</p>
                 </div>
@@ -891,22 +889,29 @@ function ConnectionRequests() {
 
   const advanceMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const { error } = await supabase.from("connection_requests").update({ status }).eq("id", id);
+      const { error } = await supabase.from("connection_requests").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-requests"] }),
   });
 
   const nextStatus = (s: string) => s === "pending" ? "active" : s === "active" ? "resolved" : null;
-  const is72hrFlagged = (r: { status: string; created_at: string }) =>
-    r.status === "pending" && hoursAgo(r.created_at) >= 72;
+  const isOverdue = (r: RawRequest) => r.is_ack_overdue;
 
   const visible = filter === "all" ? reqs
-    : filter === "__72hr" ? reqs.filter(is72hrFlagged)
+    : filter === "__overdue" ? reqs.filter(isOverdue)
     : reqs.filter(r => r.status === filter);
   const counts: Record<string, number> = { all: reqs.length };
   for (const r of reqs) counts[r.status] = (counts[r.status] ?? 0) + 1;
-  const flaggedCount = reqs.filter(is72hrFlagged).length;
+  const flaggedCount = reqs.filter(isOverdue).length;
+
+  const fmtDl = (iso: string | null) => {
+    if (!iso) return null;
+    return new Date(iso).toLocaleString("en-US", {
+      timeZone: "America/New_York", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short",
+    });
+  };
 
   const filterBtnStyle = (f: string) => ({
     padding: "0.4rem 0.875rem",
@@ -934,16 +939,16 @@ function ConnectionRequests() {
             </button>
           ))}
           {flaggedCount > 0 && (
-            <button style={filterBtnStyle("__72hr")} onClick={() => setFilter("__72hr")}>
-              ⚠ 72hr ({flaggedCount})
+            <button style={filterBtnStyle("__overdue")} onClick={() => setFilter("__overdue")}>
+              ⚠ Ack. Overdue ({flaggedCount})
             </button>
           )}
         </div>
       </div>
 
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
-          {["From", "Target Organization", "Submitted", "Status"].map(h => (
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
+          {["Requester", "Target Organization", "Submitted / Deadline", "Status"].map(h => (
             <p key={h} style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
           ))}
         </div>
@@ -955,25 +960,33 @@ function ConnectionRequests() {
         {visible.map(req => {
           const { from_name, from_org, from_phone, hmis_id, note } = parseNote(req.notes);
           const next    = nextStatus(req.status);
-          const flagged = is72hrFlagged(req);
+          const flagged = isOverdue(req);
+          const dl      = fmtDl(req.ack_deadline);
           return (
             <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
               {flagged && (
                 <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.4rem 1.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ No response for 72+ hours</span>
+                  <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue (2 business days, ET) — provider has not responded</span>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", gap: "1rem", padding: "1rem 1.25rem", cursor: "pointer", alignItems: "center" }}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr", gap: "1rem", padding: "1rem 1.25rem", cursor: "pointer", alignItems: "center" }}
                 onClick={() => setExpanded(expanded === req.id ? null : req.id)}>
                 <div>
-                  <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{from_name}</p>
-                  <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{from_org}</p>
+                  <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>{req.requester_name ?? from_name}</p>
+                  <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{req.requester_email ?? from_org}</p>
                 </div>
                 <div>
-                  <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{req.target_org?.name ?? "—"}</p>
-                  <p style={{ color: MUTED, fontSize: "0.78rem", margin: 0 }}>{req.target_contact?.full_name ?? "—"}</p>
+                  <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: 0 }}>{req.target_org_name ?? "—"}</p>
                 </div>
-                <p style={{ color: MUTED, fontSize: "0.8rem", margin: 0 }}>{fmt(req.created_at)}</p>
+                <div>
+                  <p style={{ color: MUTED, fontSize: "0.78rem", margin: "0 0 0.1rem" }}>{fmt(req.created_at)}</p>
+                  {!req.acknowledged_at && dl && (
+                    <p style={{ fontSize: "0.68rem", color: flagged ? "#991B1B" : MUTED, margin: 0 }}>Ack. by {dl}</p>
+                  )}
+                  {req.acknowledged_at && (
+                    <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Ack. {fmt(req.acknowledged_at)}</p>
+                  )}
+                </div>
                 <StatusBadge status={req.status} />
               </div>
 
@@ -994,7 +1007,7 @@ function ConnectionRequests() {
                   <div style={{ display: "flex", gap: "0.75rem", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                     {from_phone !== "—" ? (
                       <a href={`tel:${from_phone.replace(/\D/g, "")}`} style={{ color: TEAL, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
-                        Call {from_name} · {from_phone}
+                        Call {req.requester_name ?? from_name} · {from_phone}
                       </a>
                     ) : <span />}
                     <div style={{ display: "flex", gap: "0.5rem" }}>
