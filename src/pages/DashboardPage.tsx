@@ -75,6 +75,93 @@ function fmtDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+interface ContentRow { version: string; title: string; body_html: string; is_test: boolean }
+
+function OnboardingModal({
+  orgId, phase, readOnly, onPhaseComplete, onClose,
+}: {
+  orgId: string;
+  phase: "orientation" | "roe";
+  readOnly: boolean;
+  onPhaseComplete: (completedPhase: "orientation" | "roe") => void;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const { data: content, isLoading } = useQuery<ContentRow | null>({
+    queryKey: ["onboarding_content", phase],
+    queryFn: async () => {
+      const table = phase === "orientation" ? "orientation_content" : "roe_content";
+      const { data } = await supabase.from(table).select("version,title,body_html,is_test")
+        .eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      return data as ContentRow | null;
+    },
+    networkMode: "always",
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  async function handleAcknowledge() {
+    if (!content) return;
+    setSubmitting(true); setErr("");
+    const rpc = phase === "orientation" ? "staff_complete_orientation" : "staff_acknowledge_roe";
+    const param = phase === "orientation" ? { p_org_id: orgId, p_version: content.version } : { p_org_id: orgId, p_version: content.version };
+    const { error } = await supabase.rpc(rpc, param);
+    setSubmitting(false);
+    if (error) { setErr(error.message); return; }
+    qc.invalidateQueries({ queryKey: ["staff_gate", orgId] });
+    onPhaseComplete(phase);
+  }
+
+  const title = phase === "orientation" ? "Staff Orientation" : "Rules of Engagement";
+  const step = phase === "orientation" ? "Step 1 of 2" : "Step 2 of 2";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: "14px", width: "100%", maxWidth: "520px", boxShadow: "0 24px 64px rgba(0,0,0,0.22)", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+        <div style={{ background: DARK, padding: "1.25rem 1.75rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            {!readOnly && <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: TEAL, margin: "0 0 0.2rem" }}>{step}</p>}
+            <h2 style={{ color: "#fff", fontWeight: 700, fontSize: "1rem", margin: 0 }}>{readOnly ? "Review: " : ""}{content?.title ?? title}</h2>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: "1.25rem", cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: "1.5rem 1.75rem" }}>
+          {content?.is_test && (
+            <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: "6px", padding: "0.5rem 0.75rem", marginBottom: "1rem", fontSize: "0.75rem", color: "#92400E", fontWeight: 600 }}>
+              [TEST] Placeholder content — final version pending founder review
+            </div>
+          )}
+          {isLoading ? (
+            <p style={{ color: MUTED, textAlign: "center" }}>Loading…</p>
+          ) : (
+            <div
+              style={{ fontSize: "0.875rem", color: TEXT, lineHeight: 1.65, maxHeight: "360px", overflowY: "auto", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "1rem", marginBottom: "1.25rem" }}
+              dangerouslySetInnerHTML={{ __html: (content?.body_html ?? "").replace(/<script[\s\S]*?<\/script>/gi, "") }}
+            />
+          )}
+          {err && <p style={{ color: "#991B1B", fontSize: "0.78rem", marginBottom: "0.5rem" }}>{err}</p>}
+          {readOnly ? (
+            <button onClick={onClose} style={{ width: "100%", background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.9rem", padding: "0.75rem", borderRadius: "8px", cursor: "pointer" }}>
+              Done — close ✕
+            </button>
+          ) : (
+            <button
+              onClick={handleAcknowledge}
+              disabled={submitting || !content}
+              style={{ width: "100%", background: TEAL, border: "none", color: "#fff", fontWeight: 700, fontSize: "0.9rem", padding: "0.75rem", borderRadius: "8px", cursor: "pointer", opacity: !content ? 0.5 : 1 }}
+            >
+              {submitting ? "Recording…" : phase === "orientation" ? "I have read and understood this orientation →" : "I acknowledge and agree to these Rules of Engagement ✓"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfileModal({ user, onClose }: { user: { email?: string; user_metadata?: { full_name?: string } } | null; onClose: () => void }) {
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name ?? "");
   const [saving, setSaving] = useState(false);
@@ -571,6 +658,10 @@ export default function DashboardPage() {
   const requestsRef = useRef<HTMLDivElement>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [verifyLocationId, setVerifyLocationId] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingPhase, setOnboardingPhase] = useState<"orientation" | "roe">("orientation");
+  const [onboardingReadOnly, setOnboardingReadOnly] = useState(false);
+  const [staffPanelLocationIdx, setStaffPanelLocationIdx] = useState(0);
 
   // Handle ?verify=listing&location=<id> from listing-check email links
   useEffect(() => {
@@ -627,7 +718,7 @@ export default function DashboardPage() {
       if (!user) return [];
       const { data } = await supabase
         .from("org_members")
-        .select("id,org_id,location_id,role,invitation_id,joined_at,status")
+        .select("id,org_id,location_id,role,invitation_id,joined_at,status,location:locations(name)")
         .eq("user_id", user.id)
         .eq("status", "active");
       return data ?? [];
@@ -827,7 +918,7 @@ export default function DashboardPage() {
         {myMemberships.length > 0 && !myOrg && staffGate && !staffGate.can_use_tools && (
           <div style={{ backgroundColor: "#FFFBEB", border: `1px solid #FDE68A`, borderLeft: `4px solid #F59E0B`, borderRadius: "10px", padding: "1.25rem 1.5rem", marginBottom: "2.5rem" }}>
             <p style={{ fontWeight: 700, color: "#92400E", margin: "0 0 0.5rem", fontSize: "0.9375rem" }}>Complete your onboarding to access coordination tools</p>
-            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.875rem" }}>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.875rem", marginBottom: "0.75rem" }}>
               <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: staffGate.orientation_done ? "#166534" : "#92400E" }}>
                 {staffGate.orientation_done ? "✓" : "○"} Orientation
               </span>
@@ -835,9 +926,16 @@ export default function DashboardPage() {
                 {staffGate.roe_done ? "✓" : "○"} Rules of Engagement
               </span>
             </div>
-            <p style={{ color: "#92400E", margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
-              Your invitation link includes orientation and ROE steps. Once complete, you'll have full access.
-            </p>
+            <button
+              onClick={() => {
+                setOnboardingPhase(staffGate.orientation_done ? "roe" : "orientation");
+                setOnboardingReadOnly(false);
+                setShowOnboarding(true);
+              }}
+              style={{ background: "#F59E0B", border: "none", color: "#fff", fontWeight: 700, fontSize: "0.8125rem", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}
+            >
+              Complete onboarding →
+            </button>
           </div>
         )}
 
@@ -859,13 +957,19 @@ export default function DashboardPage() {
             <p style={{ fontWeight: 700, fontSize: "1rem", color: TEXT, margin: "0 0 0.5rem" }}>{staffOrg.name}</p>
 
             {/* Onboarding status */}
-            <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.8rem", color: staffGate?.orientation_done ? "#166534" : "#92400E" }}>
-                {staffGate?.orientation_done ? "✓" : "○"} Orientation {staffGate?.orientation_done ? "complete" : "pending"}
-              </span>
-              <span style={{ fontSize: "0.8rem", color: staffGate?.roe_done ? "#166534" : "#92400E" }}>
-                {staffGate?.roe_done ? "✓" : "○"} Rules of Engagement {staffGate?.roe_done ? "acknowledged" : "pending"}
-              </span>
+            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                onClick={() => { setOnboardingPhase("orientation"); setOnboardingReadOnly(!!staffGate?.orientation_done); setShowOnboarding(true); }}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "0.8rem", color: staffGate?.orientation_done ? "#166534" : "#92400E", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                {staffGate?.orientation_done ? "✓" : "○"} Orientation {staffGate?.orientation_done ? "— re-read" : "— complete now"}
+              </button>
+              <button
+                onClick={() => { setOnboardingPhase("roe"); setOnboardingReadOnly(!!staffGate?.roe_done); setShowOnboarding(true); }}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "0.8rem", color: staffGate?.roe_done ? "#166534" : "#92400E", textDecoration: "underline", textUnderlineOffset: "2px" }}
+              >
+                {staffGate?.roe_done ? "✓" : "○"} Rules of Engagement {staffGate?.roe_done ? "— re-read" : "— complete now"}
+              </button>
             </div>
 
             {/* All location assignments */}
@@ -873,10 +977,10 @@ export default function DashboardPage() {
               <p style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: "0 0 0.5rem" }}>
                 Location Assignments ({myMemberships.length})
               </p>
-              {myMemberships.map((m: { id: string; location_id: string | null; role: string; joined_at: string | null }) => (
+              {myMemberships.map((m: { id: string; location_id: string | null; role: string; joined_at: string | null; location?: { name: string }[] | null }) => (
                 <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8125rem", padding: "0.3rem 0" }}>
                   <span style={{ color: TEAL }}>●</span>
-                  <span style={{ color: TEXT, fontWeight: 500 }}>{m.location_id ?? "No location"}</span>
+                  <span style={{ color: TEXT, fontWeight: 500 }}>{(m.location as { name: string }[] | null)?.[0]?.name ?? "No location assigned"}</span>
                   <span style={{ color: MUTED }}>·</span>
                   <span style={{ color: MUTED }}>{m.role === "org_admin" ? "Organization Admin" : "Staff"}</span>
                   {m.joined_at && <span style={{ color: MUTED, marginLeft: "auto" }}>Joined {new Date(m.joined_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
@@ -947,12 +1051,32 @@ export default function DashboardPage() {
         )}
 
         {/* Staff panel — shown when the user is an invited org_admin */}
-        {!myOrg && myMembership?.role === "org_admin" && myMembership?.org_id && (
-          <StaffPanel
-            orgId={myMembership.org_id}
-            locationId={myMembership.location_id ?? null}
-          />
-        )}
+        {!myOrg && myMembership?.role === "org_admin" && myMembership?.org_id && (() => {
+          const adminLocations = myMemberships.filter((m: { role: string }) => m.role === "org_admin");
+          const selectedMembership = adminLocations[staffPanelLocationIdx] ?? adminLocations[0];
+          return (
+            <div>
+              {adminLocations.length > 1 && (
+                <div style={{ marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, color: MUTED }}>Viewing staff for:</label>
+                  <select
+                    value={staffPanelLocationIdx}
+                    onChange={e => setStaffPanelLocationIdx(Number(e.target.value))}
+                    style={{ fontSize: "0.8125rem", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.3rem 0.5rem", color: TEXT, background: SURFACE }}
+                  >
+                    {adminLocations.map((m: { id: string; location?: { name: string }[] | null }, idx: number) => (
+                      <option key={m.id} value={idx}>{(m.location as { name: string }[] | null)?.[0]?.name ?? `Location ${idx + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <StaffPanel
+                orgId={selectedMembership.org_id}
+                locationId={selectedMembership.location_id ?? null}
+              />
+            </div>
+          );
+        })()}
 
         {/* Workspace nav cards */}
         <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, color: TEXT, marginBottom: "1.25rem" }}>My Workspace</h2>
@@ -1202,6 +1326,23 @@ export default function DashboardPage() {
     </div>
     {showProfile && <ProfileModal user={user} onClose={() => setShowProfile(false)} />}
     {verifyLocationId && <ListingVerifyModal locationId={verifyLocationId} onClose={() => setVerifyLocationId(null)} />}
+    {showOnboarding && myMembership?.org_id && (
+      <OnboardingModal
+        orgId={myMembership.org_id}
+        phase={onboardingPhase}
+        readOnly={onboardingReadOnly}
+        onPhaseComplete={(completed) => {
+          if (completed === "orientation" && !onboardingReadOnly) {
+            // Advance to ROE step
+            setOnboardingPhase("roe");
+            setOnboardingReadOnly(false);
+          } else {
+            setShowOnboarding(false);
+          }
+        }}
+        onClose={() => setShowOnboarding(false)}
+      />
+    )}
     </>
   );
 }
