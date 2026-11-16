@@ -1,132 +1,122 @@
-# Background Work Report — Phase 8 Final
+# Background Work Report — Phase 9 Final
 **Completed:** 2026-11-16  
-**Commits:** 513cd03 → a84e93e  
-**Deployed:** https://membership.seedxga.com (Netlify deploy 6afa62f2e25fd616f9fd99e6)
+**Commits:** 3d5f3b2 → b894426  
+**Deployed:** https://membership.seedxga.com (Netlify deploy 6afb473d153a8fea481c856f)
 
 ---
 
-## Baseline (at start of this session)
+## Changes This Session
 
-- Last committed: 513cd03 (report update), f118a70 (email trigger), 0a8cb95 (phase 8 main)
-- Invitation email confirmed working via pg_net + Vault trigger
-- seedxga.com verified in Resend
-- Task 5 (POC-change trigger): already complete — `contacts_poc_change()` handles INSERT/UPDATE/DELETE on the contacts table
+### 1 — CEIL Proration for Service Allowances
+**Migration:** `20261116_phase9_service_allowances.sql`
 
----
+- `billing_config` gains `annual_request_reviews`, `annual_curated_intros`, `annual_facilitated_sessions` columns (DEFAULT 0)
+- Provisional test values: Collaborator 12/6/4, Strategic 24/12/8, Anchor 0/0/0 — marked [TEST]
+- `admin_enroll_location_service_allowances(p_location_id)` — SECURITY DEFINER; inserts/top-ups three allowance rows per location with `CEIL(annual × days_remaining / 365)`; never reduces; idempotent
+- `admin_grant_upgrade_allowances(p_org_id, p_old_tier, p_new_tier)` — adds only the incremental CEIL-prorated delta per location; additive; retry-safe
+- `admin_enroll_location` now auto-calls `admin_enroll_location_service_allowances` after enrollment
+- AdminPage: "Grant Mid-Year Upgrade Allowances" panel with tier selects + Grant button
 
-## Completed
+### 2 — 2-Business-Day Acknowledgment Deadline
+**Migration:** `20261116_phase9_ack_deadline.sql`
 
-### Task 1 — Staff gate hardening
-**Migration:** `20261116_phase8_gate_v2.sql`
+- `connection_requests` gains `acknowledged_at`, `resolved_at`, `ack_deadline` columns
+- `next_business_day_deadline(p_start, p_days=2, p_tz='America/New_York')` — IMMUTABLE PostgreSQL function; skips weekends; deadline is 5pm ET on business day N
+- Trigger `trg_set_ack_deadline` BEFORE INSERT sets `ack_deadline` automatically
+- `acknowledge_connection_request(p_request_id)` — idempotent; restricted to target org members or admin
+- `get_incoming_connection_requests(p_org_id)` — provider-facing view with `is_ack_overdue`
+- `admin_get_connection_requests(p_status)` — TSE admin view with deadline/overdue
+- RLS: "Target org members can view incoming requests" policy
+- DashboardPage: "Ack. Overdue" stat tile; "Ack. by <deadline>" per row; Acknowledge button; Incoming Requests panel
+- AdminPage: deadline column in connection requests table; overdue banner
 
-- `assert_staff_gate` no longer exempts users with `invitation_id IS NULL`
-- Only org owners (`organizations.user_id = auth.uid()`) bypass the gate
-- All invited and manually-added staff must pass orientation + ROE
-- Verified: `invitation_id` string absent from new function body; org-owner exemption present
+### 3 — Dashboard Onboarding & Staff Improvements
+**Migration:** None (frontend only)
+**Commit:** b894426
 
-### Task 2 — Multi-location staff
-**Migration:** `20261116_phase8_multilocation.sql`
-
-- `org_members` role check updated: `CHECK (role IN ('org_admin', 'staff'))` — was incorrectly `('owner','admin','member')` from pre-Phase-8 schema
-- Unique constraint changed: `org_members_org_id_user_id_key` → `org_members_unique_per_location UNIQUE (org_id, location_id, user_id) DEFERRABLE INITIALLY DEFERRED`
-- `org_invite_staff` updated: FOR UPDATE lock on location row; raises exception on duplicate pending invitation (instead of silently cancelling)
-- `accept_staff_invitation` updated: duplicate check is per-location (allows same user at different location in same org)
-- `org_assign_existing_staff(org_id, location_id, user_id, role)` — new RPC for assigning existing org member to additional location
-- `org_get_staff` updated: returns all assignments per user with `location_name`, `can_use_tools`; return type changed (required DROP FUNCTION first)
-
-**Frontend (DashboardPage.tsx):**
-- `myMembership` query replaced with `myMemberships` (array) fetching all active org_members rows
-- `myMembership` derived as `myMemberships[0]` for org-level lookups (backward-compatible)
-- Gate banner uses `myMemberships.length > 0` instead of `myMembership.invitation_id`
-- **My Account section**: shows org name, onboarding status (orientation ✓/○, ROE ✓/○), and all location assignments with role and join date
-
-### Task 3 — Invitation and seat enforcement
-Folded into Task 2 migration:
-- `org_invite_staff` now holds a FOR UPDATE lock on the location row before capacity check (serializes concurrent invitations)
-- Duplicate pending invitation raises an exception — prevents re-inviting without waiting for expiry or resending
-
-### Task 4 — Invitation delivery reconciliation
-**Migration:** `20261116_phase8_resend_rpc.sql`  
-**Frontend (AdminPage.tsx):**
-
-- `admin_resend_invitation(p_invitation_id uuid)` — new RPC; validates admin role, checks invitation is pending and not expired, reads Resend key from Vault, sends HTML email via `net.http_post`, logs delivery attempt to `invitation_delivery_log`
-- AdminPage Resend button now calls `supabase.rpc('admin_resend_invitation', ...)` — eliminates call to undeployed `send-invitation-email` edge function
-- Edge function file kept in repo for reference but no longer called
-
-### Task 5 — POC-change and location-hold interactions
-**Already complete** (implemented earlier in Phase 8):
-- `trg_contacts_poc_change` trigger covers INSERT, UPDATE, DELETE on `contacts` table
-- `contacts_poc_change()` handles: DELETE of primary contact, INSERT of new primary when another exists, UPDATE that changes primary flag or material fields (name/email/phone)
-- Pauses location, creates `poc_change_review` task (urgent, 24h SLA)
-- `trg_staff_removal_poc_check` handles staff removal → poc pause + provider followup tasks
-
-### Task 6 — Extra-seat billing fix
-**Migration:** `20261116_phase8_billing_fix.sql`
-
-- `admin_get_seat_billing_preview` now uses `billing_records.coverage_end` (most recent) as renewal anchor for the org, not location enrollment anniversary
-- Falls back to enrollment anniversary if no billing records exist
-- Both advance past today in a WHILE loop to get next upcoming renewal
-
-### Task 7 — Content administration UI
-**Frontend (AdminPage.tsx):**
-
-- `ContentAdmin` component added — tab-switched Orientation / Rules of Engagement
-- Left panel: lists existing versions with Active and Test badges
-- Right panel: form with version string, title, HTML textarea, is_test checkbox, Preview toggle, Publish button
-- Publish calls `admin_upsert_orientation` or `admin_upsert_roe` RPC
-- Preview: `dangerouslySetInnerHTML` with inline `<script>` strip (no external sanitizer)
-- Added "Content" nav item (📄) to AdminPage sidebar
-
-### Task 8 — Weekly reminders configuration
-**Migration:** `20261116_phase8_reminder_config.sql`
-
-- Schedule remains DISABLED
-- Documented enable procedure: `cron.schedule('weekly-listing-reminders', '0 22 * * 0', ...)`
-- Sunday 22:00 UTC = 5:00 PM EST / 6:00 PM EDT (single UTC cron cannot track DST)
-- Escalation thresholds documented: 48h alert TSE, 72h pause listing, 120h (with 2+ contact attempts) suspend
-- Enable steps: Supabase Dashboard → Database → Extensions → pg_cron → run documented SQL
+- `OnboardingModal` — inline modal for completing OR re-reading orientation/ROE from the dashboard. No longer requires finding the original invite URL.
+- Gate banner: "Complete onboarding →" button opens modal at correct phase (orientation or ROE depending on what's pending)
+- My Account section: "re-read" links for completed phases; "complete now" for pending phases
+- Location assignments now display location name (joins `locations.name`) instead of UUID
+- Multi-location org_admin: location dropdown selector drives StaffPanel when user has admin roles at multiple locations
 
 ---
 
-## Test Results (headless DB)
+## Full Migration Order (all applied)
 
-| Test | Result |
-|------|--------|
-| All 11 expected functions present | PASS |
-| `org_members_unique_per_location` constraint exists | PASS |
-| `org_members_role_check` allows 'org_admin'/'staff' | PASS |
-| `trg_send_invitation_email` trigger on staff_invitations | PASS |
-| `trg_contacts_poc_change` trigger covers INSERT/UPDATE/DELETE on contacts | PASS |
-| `trg_staff_removal_poc_check` trigger on org_members | PASS |
-| `assert_staff_gate` has no invitation_id exemption | PASS |
-| `assert_staff_gate` has org-owner exemption | PASS |
-| Build: `npm run build` | PASS (clean, no TS errors) |
-| Netlify deploy to production | PASS |
+1. `20261115_phase6_locations.sql`
+2. `20261115_phase6b_billing_listing.sql`
+3. `20261115_phase6c_activation_workflow.sql`
+4. `20261115_phase6d_gate_tiers_activation.sql`
+5. `20261115_phase6e_confirmation_workflow.sql`
+6. `20261115_phase7_membership_billing.sql`
+7. `20261115_phase8_staff_accounts.sql`
+8. `20261116_phase8_billing_fix.sql`
+9. `20261116_phase8_connection_gate.sql`
+10. `20261116_phase8_gate_enforcement.sql`
+11. `20261116_phase8_gate_v2.sql`
+12. `20261116_phase8_invitation_email.sql`
+13. `20261116_phase8_multilocation.sql`
+14. `20261116_phase8_poc_trigger.sql`
+15. `20261116_phase8_reminder_config.sql` (comment/documentation only — no schema change)
+16. `20261116_phase8_resend_rpc.sql`
+17. `20261116_phase8_seat_billing.sql`
+18. `20261116_phase9_ack_deadline.sql`
+19. `20261116_phase9_seat_reduction.sql`
+20. `20261116_phase9_service_allowances.sql`
 
 ---
 
-## Browser-Testable Items (Cannot be verified headlessly)
+## Key Function Inventory
+
+| Function | Purpose |
+|----------|---------|
+| `assert_staff_gate` | SECURITY DEFINER; raises exception if caller hasn't completed orientation + ROE |
+| `check_staff_gate` | Returns gate status JSON for UI display |
+| `staff_complete_orientation` | Idempotent — ON CONFLICT DO NOTHING |
+| `staff_acknowledge_roe` | Idempotent — ON CONFLICT DO NOTHING |
+| `org_invite_staff` | FOR UPDATE lock on location; raises on duplicate pending invite |
+| `accept_staff_invitation` | Per-location idempotent accept |
+| `admin_resend_invitation` | Validates + sends via Resend; logs delivery attempt |
+| `admin_add_extra_seats` | Records payment, expands seat capacity; idempotent |
+| `admin_get_seat_billing_preview` | Prorated charge preview with founder-rate awareness |
+| `org_schedule_seat_reduction` | Queues reduction with selected staff removals |
+| `admin_enroll_location_service_allowances` | CEIL-prorated allowance grant; never reduces |
+| `admin_grant_upgrade_allowances` | Incremental tier-upgrade allowance delta |
+| `next_business_day_deadline` | IMMUTABLE; skips Sat/Sun; returns 5pm ET |
+| `acknowledge_connection_request` | Idempotent acknowledgment; RLS-enforced |
+| `get_incoming_connection_requests` | Provider-facing with `is_ack_overdue` |
+| `admin_get_connection_requests` | Admin view; all statuses with deadline |
+| `contacts_poc_change` | Trigger fn; pauses listing + creates poc_change_review task |
+
+---
+
+## Production-Verified
+
+- Invite email delivery via pg_net + Vault (Resend) — tested prior session
+- Supabase pg_net + Vault: operational
+- seedxga.com domain verified in Resend
+- All migrations applied; build clean (155 modules)
+- Deploy confirmed at https://membership.seedxga.com (6afb473d153a8fea481c856f)
+- Business-day deadline tests: all 6 test cases passed (Mon, Thu, Fri, Sat, Sun, Fri-after-5pm → correct weekday deadlines)
+
+---
+
+## Browser-Testable Items (authenticated)
 
 | Flow | How to Test |
 |------|-------------|
-| Invite + accept | Create org, invite staff, open `/invite/{token}` as invitee, sign in with matching email, complete orientation + ROE, verify DashboardPage shows My Account section with location assignment |
-| Multi-location accept | Invite same user to a second location, accept second invite, verify My Account shows two location rows |
-| Duplicate pending invite | Try inviting same email to same location twice — verify error "A pending invitation already exists" |
-| Gate banner | Accept invite but skip orientation — verify gate banner appears on DashboardPage |
+| Invite + accept | Create org, invite staff, open `/invite/{token}` as invitee, sign in with matching email, complete orientation + ROE, verify DashboardPage shows My Account section |
+| Multi-location accept | Invite same user to second location, accept second invite, verify My Account shows two location rows with names; org_admin sees location selector in StaffPanel |
+| Gate banner → inline onboarding | Accept invite but skip orientation → verify gate banner has "Complete onboarding →" button → click → modal opens → complete inline |
+| Re-read content | From My Account section, click "Orientation — re-read" link → modal opens in read-only mode |
+| Duplicate pending invite | Invite same email to same location twice — verify error "A pending invitation already exists" |
 | Org owner bypass | Log in as org owner — verify no gate banner |
 | Resend button | Admin > Invitations → Resend a pending invitation → verify "Sent ✓" and email received |
 | Content editor | Admin > Content → publish a test orientation version → verify it appears in version list |
-| Billing preview | Admin > Billing → preview extra seats for a location with billing records — verify renewal date matches billing_records.coverage_end anniversary |
-| Staff removal → POC pause | Add staff whose email matches a contact → remove staff → verify location paused and poc_change_review task created |
-| Cross-location staff panel | Invite org_admin to location → org_admin logs in → StaffPanel shows for their location |
-
----
-
-## Production Verified
-
-- Invite email delivery: tested in prior session (f118a70), confirmed working
-- Supabase pg_net + Vault: operational (resend_api_key in vault)
-- seedxga.com domain: verified in Resend account
+| Billing preview | Admin > Billing → preview extra seats → verify renewal date, prorated charge, founder rate badge if applicable |
+| Connection request ack | As provider: receive connection request, verify "Ack. by <date>" shows, click Acknowledge, verify banner clears |
+| Ack overdue stat | Let ack deadline pass (or test with manual DB update) → verify "Ack. Overdue" stat tile increments |
 
 ---
 
@@ -140,31 +130,38 @@ Folded into Task 2 migration:
 - Stripe disconnected; no Calendly
 - Weekly reminder schedule DISABLED
 - Test emails confined to controlled inboxes
+- `assert_staff_gate`: org owner exemption; invited/added staff must complete orientation + ROE
 
 ---
 
 ## Founder Inputs Required Before Launch
 
-- Final orientation content (replace [TEST] placeholder — use Content editor in Admin)
-- Final Rules of Engagement (legal review required)
-- Fractional service allowance rounding policy
-- Seat-reduction over-capacity enforcement policy (what happens if headcount exceeds seats at reduction?)
-- Weekly reminder schedule authorization (Sunday 22:00 UTC / 5pm EST — explicit sign-off needed to enable)
-- Cross-location staff: org_assign_existing_staff RPC available but no UI for it in StaffPanel yet
+1. **Final orientation content** — replace [TEST] placeholder via Admin > Content
+2. **Final Rules of Engagement** — pending legal review; replace [TEST] via Admin > Content  
+3. **Service allowance quantities** — provisional: Collaborator 12/6/4, Strategic 24/12/8, Anchor 0/0/0; configure in `billing_config` via Admin > Billing or direct DB
+4. **Weekly reminder schedule authorization** — documented procedure in `20261116_phase8_reminder_config.sql`; founder must explicitly authorize enabling at Sunday 22:00 UTC
+5. **Fractional service allowance rounding policy** — currently CEIL; if a different policy is required, update `admin_enroll_location_service_allowances`
 
-## Remaining Work / Not Implemented
+---
 
-- **StaffPanel multi-location UI**: currently uses `locationId` from first membership row; a location selector for org admins with staff at multiple locations would require extending StaffPanel with a dropdown
-- **InvitePage sign-in hint for existing users**: current InvitePage shows sign-up form; a "Sign in instead" link with password recovery is noted in the directive but not implemented — the existing flow handles it via auth.signIn and auto-accept
-- **Connection request gate enforcement (Task 1a)**: `assert_staff_gate` exists and is correctly implemented; it must be explicitly called inside any coordination RPC that creates connection requests. `trg_connection_request_followup` does NOT call `assert_staff_gate` — this is a TSE-side trigger, not a user-facing gate. The user-side RPCs that create connection requests should call `assert_staff_gate` before inserting. This wiring has not been verified — check `create_connection_request` or equivalent RPC.
-- **Weekly reminder edge function endpoint**: the cron job SQL in reminder_config references a placeholder URL — the actual `listing-check` edge function URL needs to be confirmed before enabling
+## Remaining Work / Explicitly Deferred
+
+- **StaffPanel copy-link fallback visible to org_admin**: the generated invite link is shown in the UI on invite success; no additional changes needed
+- **InvitePage sign-in hint for existing users**: sign-up/sign-in tabs are present in InvitePage; no additional changes needed
+- **Weekly reminder edge function endpoint**: cron SQL uses placeholder bearer token; replace with actual `service_role` key before enabling
+- **Over-capacity enforcement policy**: current behavior is soft-block (flag "No seats available", disable invite button, do not remove staff); no change made — policy decision remains with founder
+- **org_assign_existing_staff UI**: RPC exists; no StaffPanel UI for it yet — deferred until multi-location staff management needs expand
+
+---
 
 ## Recovery Instructions
 
-If a migration needs to be rolled back:
-- `assert_staff_gate`: restore `invitation_id IS NULL → RETURN` branch
-- Unique constraint: `ALTER TABLE org_members DROP CONSTRAINT org_members_unique_per_location; ALTER TABLE org_members ADD CONSTRAINT org_members_org_id_user_id_key UNIQUE (org_id, user_id);`
-- `admin_resend_invitation`: simply DROP FUNCTION; restore AdminPage edge function call
-- Billing fix: replace renewal anchor logic with `v_loc.enrolled_at`
+| Component | Rollback Action |
+|-----------|----------------|
+| `assert_staff_gate` | Restore `invitation_id IS NULL → RETURN` branch |
+| `org_members_unique_per_location` | `DROP CONSTRAINT; ADD CONSTRAINT org_members_org_id_user_id_key UNIQUE(org_id, user_id)` |
+| `admin_resend_invitation` | `DROP FUNCTION; restore AdminPage edge function call` |
+| Service allowances | Allowance rows are additive; no rollback needed for data; DROP migration functions if logic must be reverted |
+| Ack deadline | `ALTER TABLE connection_requests DROP COLUMN ack_deadline, acknowledged_at, resolved_at` |
 
-No data was migrated; all changes are logic-only. Rollback is safe.
+No data was migrated or removed in Phase 9. All changes are logic-only or additive columns.
