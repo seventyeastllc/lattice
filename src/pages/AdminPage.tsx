@@ -2056,6 +2056,12 @@ function BillingAdmin() {
   const [seatError, setSeatError]     = useState("");
   const [seatSuccess, setSeatSuccess] = useState("");
 
+  // Upgrade allowances state
+  const [upgradeOldTier, setUpgradeOldTier]   = useState("");
+  const [upgradeNewTier, setUpgradeNewTier]   = useState("");
+  const [upgradeError, setUpgradeError]       = useState("");
+  const [upgradeSuccess, setUpgradeSuccess]   = useState("");
+
   // Seat reduction state
   const [reductionOpen, setReductionOpen]       = useState(false);
   const [reductionSelections, setReductionSels] = useState<string[]>([]);
@@ -2169,6 +2175,26 @@ function BillingAdmin() {
       setReductionSuccess("Seat reduction applied successfully.");
     },
     onError: (e: Error) => setReductionError(e.message),
+  });
+
+  const grantUpgradeAllowances = useMutation({
+    mutationFn: async ({ oldTier, newTier }: { oldTier: string; newTier: string }) => {
+      if (!selectedOrgId) return;
+      const { data, error } = await supabase.rpc("admin_grant_upgrade_allowances", {
+        p_org_id: selectedOrgId,
+        p_old_tier: oldTier,
+        p_new_tier: newTier,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org-billing", selectedOrgId] });
+      setUpgradeSuccess("Incremental allowances granted.");
+      setUpgradeOldTier("");
+      setUpgradeNewTier("");
+    },
+    onError: (e: Error) => setUpgradeError(e.message),
   });
 
   const fetchSeatPreview = async (locId: string, seats: number) => {
@@ -2328,11 +2354,12 @@ function BillingAdmin() {
               <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
                 <div style={{ padding: "0.75rem 1.25rem", borderBottom: `1px solid ${BORDER}`, background: BG }}>
                   <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.8125rem", margin: 0 }}>Service Allowances</p>
+                  <p style={{ fontSize: "0.72rem", color: MUTED, margin: "0.2rem 0 0" }}>Mid-year allowances are prorated by days remaining (ceiling-rounded).</p>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
                   <thead>
                     <tr>
-                      {["Location", "Year", "Type", "Annual", "Used", "Remaining", "Period", "Status"].map(h => (
+                      {["Location", "Yr", "Type", "Granted", "Used", "Remaining", "Period", "Status"].map(h => (
                         <th key={h} style={{ textAlign: h === "Location" ? "left" : "right", padding: "0.5rem 0.75rem", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: MUTED, borderBottom: `1px solid ${BORDER}`, background: BG }}>{h}</th>
                       ))}
                     </tr>
@@ -2340,11 +2367,19 @@ function BillingAdmin() {
                   <tbody>
                     {billing.service_allowances.map(sa => {
                       const loc = billing.line_items.find(l => l.location_id === sa.location_id);
+                      const typeLabel: Record<string, string> = {
+                        request_reviews: "Request Reviews",
+                        curated_intros: "Curated Intros",
+                        facilitated_sessions: "Facilitated Sessions",
+                        hours: "Service Hours",
+                        credits: "Credits",
+                        sessions: "Sessions",
+                      };
                       return (
                         <tr key={sa.id} style={{ borderBottom: `1px solid ${BORDER}`, opacity: sa.expired_at ? 0.55 : 1 }}>
                           <td style={{ padding: "0.5rem 0.75rem", color: TEXT, fontSize: "0.75rem" }}>{loc?.location_name ?? sa.location_id.slice(0, 8)}</td>
                           <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: MUTED }}>{sa.membership_year}</td>
-                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: MUTED }}>{sa.allowance_type}</td>
+                          <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: MUTED }}>{typeLabel[sa.allowance_type] ?? sa.allowance_type}</td>
                           <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{sa.annual_amount}</td>
                           <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{sa.used_amount}</td>
                           <td style={{ padding: "0.5rem 0.75rem", textAlign: "right", fontWeight: 700, color: Number(sa.remaining) < 2 ? "#991B1B" : "#166534" }}>{sa.remaining}</td>
@@ -2359,6 +2394,47 @@ function BillingAdmin() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Grant upgrade allowances */}
+            {billing.line_items.length > 0 && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.25rem 1.5rem" }}>
+                <p style={{ fontWeight: 700, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.3rem" }}>Grant Mid-Year Upgrade Allowances</p>
+                <p style={{ fontSize: "0.75rem", color: MUTED, margin: "0 0 0.875rem" }}>
+                  After a tier upgrade, adds only the incremental CEIL-prorated allowances (request reviews, intros, sessions) to all active enrolled locations. Retry-safe.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.75rem", alignItems: "flex-end" }}>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>Previous Tier</label>
+                    <select value={upgradeOldTier} onChange={e => { setUpgradeOldTier(e.target.value); setUpgradeError(""); setUpgradeSuccess(""); }}
+                      style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem" }}>
+                      <option value="">— select —</option>
+                      <option value="collaborator">Collaborator</option>
+                      <option value="strategic">Strategic</option>
+                      <option value="anchor">Anchor</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", color: MUTED, fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>New Tier</label>
+                    <select value={upgradeNewTier} onChange={e => { setUpgradeNewTier(e.target.value); setUpgradeError(""); setUpgradeSuccess(""); }}
+                      style={{ width: "100%", padding: "0.5rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "5px", fontSize: "0.875rem" }}>
+                      <option value="">— select —</option>
+                      <option value="collaborator">Collaborator</option>
+                      <option value="strategic">Strategic</option>
+                      <option value="anchor">Anchor</option>
+                    </select>
+                  </div>
+                  <button
+                    disabled={!upgradeOldTier || !upgradeNewTier || upgradeOldTier === upgradeNewTier || grantUpgradeAllowances.isPending}
+                    onClick={() => { setUpgradeError(""); setUpgradeSuccess(""); grantUpgradeAllowances.mutate({ oldTier: upgradeOldTier, newTier: upgradeNewTier }); }}
+                    style={{ padding: "0.5rem 1rem", background: TEAL, color: "#fff", border: "none", borderRadius: "5px", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    {grantUpgradeAllowances.isPending ? "Granting…" : "Grant"}
+                  </button>
+                </div>
+                {upgradeError && <p style={{ color: "#991B1B", fontSize: "0.78rem", margin: "0.5rem 0 0" }}>{upgradeError}</p>}
+                {upgradeSuccess && <p style={{ color: "#166534", fontSize: "0.78rem", margin: "0.5rem 0 0" }}>{upgradeSuccess}</p>}
               </div>
             )}
 
