@@ -846,7 +846,7 @@ export default function DashboardPage() {
   // Assignment
   const [assigningTo, setAssigningTo] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState("");
-  const { data: orgStaff = [] } = useQuery<{ user_id: string; full_name: string; role: string }[]>({
+  const { data: orgStaff = [] } = useQuery<{ user_id: string; full_name: string; role: string; role_label: string }[]>({
     queryKey: ["org-staff", incomingOrgId],
     enabled: !!incomingOrgId,
     staleTime: 1000 * 60 * 5,
@@ -1485,6 +1485,19 @@ export default function DashboardPage() {
                 const isClosed = !!req.closed_at;
                 const isResponding = respondingTo === req.id;
                 const isUnableModal = unableModal === req.id;
+                // Role-based capability flags for this request
+                const vRole = req.viewer_role ?? "staff";
+                const isPoc         = vRole === "poc" || vRole === "admin";
+                const isStaff       = vRole === "staff";
+                // Leadership can act only when covering; non-covering is read-only
+                const isLeadership  = vRole === "leadership";
+                // For now, covering status is determined server-side; leadership sees
+                // the same actions as POC when covering (viewer_role would be 'poc' if
+                // we want to simplify — but we keep 'leadership' and check is_covering
+                // from location_leadership. As a safe approximation until the covering
+                // toggle UI is built: leadership gets read-only by default.
+                const canAct        = isPoc || isStaff;
+                const canPocAct     = isPoc;
                 const typeLabels: Record<string, string> = {
                   facilitated_connection: "Facilitated Connection",
                   case_conference: "Case Conference",
@@ -1549,7 +1562,12 @@ export default function DashboardPage() {
                         </div>
                         <StatusBadge status={req.status} />
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", alignItems: "flex-end" }}>
-                          {!req.acknowledged_at && !isClosed && (
+                          {/* Leadership read-only badge */}
+                          {isLeadership && !isClosed && (
+                            <span style={{ fontSize: "0.68rem", color: MUTED, padding: "0.2rem 0.5rem", border: `1px solid ${BORDER}`, borderRadius: "4px" }}>Read-only oversight</span>
+                          )}
+                          {/* Acknowledge — POC or staff */}
+                          {canAct && !req.acknowledged_at && !isClosed && (
                             <button
                               onClick={() => acknowledgeRequest.mutate(req.id)}
                               disabled={acknowledgeRequest.isPending}
@@ -1558,7 +1576,8 @@ export default function DashboardPage() {
                               Acknowledge
                             </button>
                           )}
-                          {req.acknowledged_at && !isClosed && (
+                          {/* Respond — POC or staff */}
+                          {canAct && req.acknowledged_at && !isClosed && (
                             <button
                               onClick={() => { setRespondingTo(req.id); setResponseText(""); setIncomingError(null); }}
                               style={{ background: DARK, color: "#fff", border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
@@ -1566,7 +1585,8 @@ export default function DashboardPage() {
                               Respond
                             </button>
                           )}
-                          {req.acknowledged_at && !isClosed && !req.is_collaboration && (
+                          {/* Invite provider — POC or staff */}
+                          {canAct && req.acknowledged_at && !isClosed && !req.is_collaboration && (
                             <button
                               onClick={() => { setCollabModal(req.id); setCollabLocationId(""); setCollabMessage(""); setIncomingError(null); }}
                               style={{ background: "#EFF6FF", color: "#1E40AF", border: "1px solid #BFDBFE", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
@@ -1574,7 +1594,8 @@ export default function DashboardPage() {
                               Invite provider
                             </button>
                           )}
-                          {req.acknowledged_at && !isClosed && (
+                          {/* Assign — POC only */}
+                          {canPocAct && req.acknowledged_at && !isClosed && (
                             <button
                               onClick={() => { setAssigningTo(req.id); setAssigneeId(req.assigned_to ?? ""); setIncomingError(null); }}
                               style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", cursor: "pointer", whiteSpace: "nowrap" }}
@@ -1582,8 +1603,8 @@ export default function DashboardPage() {
                               {req.assigned_to ? "Reassign" : "Assign"}
                             </button>
                           )}
-                          {/* POC-only: Unable to assist */}
-                          {req.acknowledged_at && !isClosed && !req.unable_to_assist_category && (
+                          {/* Unable to assist — POC only */}
+                          {canPocAct && req.acknowledged_at && !isClosed && !req.unable_to_assist_category && (
                             <button
                               onClick={() => { setUnableModal(req.id); setUnableCategory(""); setUnableNote(""); setIncomingError(null); }}
                               style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
@@ -1717,8 +1738,8 @@ export default function DashboardPage() {
                             style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", marginBottom: "0.5rem" }}
                           >
                             <option value="">Unassigned</option>
-                            {orgStaff.map(s => (
-                              <option key={s.user_id} value={s.user_id}>{s.full_name ?? s.user_id} {s.role === "org_admin" ? "(POC)" : ""}</option>
+                            {orgStaff.filter(s => s.role !== "leadership").map(s => (
+                              <option key={s.user_id} value={s.user_id}>{s.full_name ?? s.user_id} ({s.role_label ?? (s.role === "org_admin" ? "POC" : "Staff")})</option>
                             ))}
                           </select>
                           <div style={{ display: "flex", gap: "0.5rem" }}>

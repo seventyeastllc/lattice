@@ -24,6 +24,7 @@ export interface IncomingRequest {
   requester_org: string | null;
   flagged_at: string | null;
   is_content_restricted: boolean;
+  viewer_role: "poc" | "staff" | "leadership" | "admin" | null;
 }
 
 export function useIncomingRequests(orgId: string | null) {
