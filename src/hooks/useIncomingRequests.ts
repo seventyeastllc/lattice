@@ -22,6 +22,8 @@ export interface IncomingRequest {
   requester_name: string | null;
   requester_email: string | null;
   requester_org: string | null;
+  flagged_at: string | null;
+  is_content_restricted: boolean;
 }
 
 export function useIncomingRequests(orgId: string | null) {

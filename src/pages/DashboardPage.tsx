@@ -775,6 +775,8 @@ export default function DashboardPage() {
   const [unableCategory, setUnableCategory] = useState("");
   const [unableNote, setUnableNote] = useState("");
   const [incomingError, setIncomingError] = useState<string | null>(null);
+  const [flaggingReq, setFlaggingReq] = useState<string | null>(null);
+  const [flagReason, setFlagReason] = useState("");
 
   const acknowledgeRequest = useMutation({
     mutationFn: async (reqId: string) => {
@@ -799,6 +801,21 @@ export default function DashboardPage() {
     onSuccess: () => {
       setRespondingTo(null);
       setResponseText("");
+      setIncomingError(null);
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+    onError: (e: Error) => setIncomingError(e.message),
+  });
+
+  const flagRequest = useMutation({
+    mutationFn: async ({ reqId, reason }: { reqId: string; reason: string }) => {
+      const { error } = await supabase.rpc("flag_request", { p_request_id: reqId, p_reason: reason });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setFlaggingReq(null);
+      setFlagReason("");
       setIncomingError(null);
       refetchIncoming();
       qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
@@ -1574,6 +1591,21 @@ export default function DashboardPage() {
                               Unable to assist
                             </button>
                           )}
+                          {/* Flag for review — available on any open, unflagged request */}
+                          {!isClosed && !req.flagged_at && !req.is_content_restricted && (
+                            <button
+                              onClick={() => { setFlaggingReq(req.id); setFlagReason(""); setIncomingError(null); }}
+                              style={{ background: "transparent", color: "#D97706", border: "1px solid #FCD34D", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              🚩 Flag
+                            </button>
+                          )}
+                          {req.flagged_at && !req.is_content_restricted && (
+                            <span style={{ fontSize: "0.72rem", color: "#D97706", padding: "0.35rem 0.5rem", border: "1px solid #FCD34D", borderRadius: "5px", background: "#FFFBEB" }}>🚩 Flagged</span>
+                          )}
+                          {req.is_content_restricted && (
+                            <span style={{ fontSize: "0.72rem", color: "#991B1B", padding: "0.35rem 0.5rem", border: "1px solid #FECACA", borderRadius: "5px", background: "#FEE2E2" }}>🚫 Restricted</span>
+                          )}
                         </div>
                       </div>
 
@@ -1637,6 +1669,36 @@ export default function DashboardPage() {
                             </button>
                             <button
                               onClick={() => { setUnableModal(null); setUnableCategory(""); setUnableNote(""); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Flag for review form */}
+                      {flaggingReq === req.id && (
+                        <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem", background: "#FFFBEB", borderRadius: "6px", padding: "1rem" }}>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Flag request for TSE review</p>
+                          <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.75rem" }}>Flags are reviewed by TSE staff. Your identity is not disclosed to the provider.</p>
+                          <textarea
+                            value={flagReason}
+                            onChange={e => setFlagReason(e.target.value)}
+                            placeholder="Briefly describe the concern (e.g. inappropriate content, potential safety issue)…"
+                            rows={3}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: "0.75rem" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => flagRequest.mutate({ reqId: req.id, reason: flagReason })}
+                              disabled={flagRequest.isPending || !flagReason.trim()}
+                              style={{ background: "#D97706", color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {flagRequest.isPending ? "Sending…" : "Submit flag"}
+                            </button>
+                            <button
+                              onClick={() => { setFlaggingReq(null); setFlagReason(""); }}
                               style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
                             >
                               Cancel

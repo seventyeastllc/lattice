@@ -174,6 +174,22 @@ interface RawRequest {
   target_org_name: string | null;
   requester_name: string | null;
   requester_email: string | null;
+  // Phase 10 additions
+  assigned_to: string | null;
+  is_inactivity_flagged: boolean;
+  inactivity_deadline: string | null;
+  unable_to_assist_category: string | null;
+  unable_to_assist_note: string | null;
+  closed_at: string | null;
+  closure_type: string | null;
+  is_collaboration: boolean;
+  parent_request_id: string | null;
+  // Phase 10e content flagging
+  flagged_at: string | null;
+  flag_reason: string | null;
+  is_content_restricted: boolean;
+  restriction_reason: string | null;
+  reconsideration_requested_at: string | null;
 }
 
 // All active orgs
@@ -260,7 +276,7 @@ function usePendingClaims() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing" | "invitations" | "content";
+type View = "overview" | "applications" | "claims" | "requests" | "organizations" | "tse_tasks" | "crm" | "knowledge" | "announcements" | "billing" | "invitations" | "content" | "weekly_review";
 
 function Sidebar({
   view, setView, onSignOut,
@@ -281,7 +297,8 @@ function Sidebar({
     { id: "crm"           as View, label: "CRM",           icon: "🗃️", badge: 0 },
     { id: "knowledge"     as View, label: "Knowledge",     icon: "📚", badge: 0 },
     { id: "announcements" as View, label: "Announcements", icon: "📢", badge: 0 },
-    { id: "content"       as View, label: "Content",       icon: "📄", badge: 0 },
+    { id: "content"        as View, label: "Content",        icon: "📄", badge: 0 },
+    { id: "weekly_review"  as View, label: "Weekly Review",  icon: "📊", badge: 0 },
   ];
 
   return (
@@ -886,6 +903,9 @@ function ConnectionRequests() {
   const { data: reqs = [], isLoading } = useConnectionRequests();
   const [filter, setFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [restrictingId, setRestrictingId] = useState<string | null>(null);
+  const [restrictReason, setRestrictReason] = useState("");
+  const [adminErr, setAdminErr] = useState<string | null>(null);
 
   const advanceMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
@@ -895,15 +915,37 @@ function ConnectionRequests() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-requests"] }),
   });
 
+  const restrictMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const { error } = await supabase.rpc("admin_restrict_content", { p_request_id: id, p_restriction_reason: reason });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-requests"] }); setRestrictingId(null); setRestrictReason(""); },
+    onError: (e: Error) => setAdminErr(e.message),
+  });
+
+  const liftMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("admin_lift_restriction", { p_request_id: id });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-requests"] }),
+    onError: (e: Error) => setAdminErr(e.message),
+  });
+
   const nextStatus = (s: string) => s === "pending" ? "active" : s === "active" ? "resolved" : null;
   const isOverdue = (r: RawRequest) => r.is_ack_overdue;
 
   const visible = filter === "all" ? reqs
     : filter === "__overdue" ? reqs.filter(isOverdue)
+    : filter === "__flagged" ? reqs.filter(r => r.flagged_at && !r.is_content_restricted)
+    : filter === "__restricted" ? reqs.filter(r => r.is_content_restricted)
     : reqs.filter(r => r.status === filter);
   const counts: Record<string, number> = { all: reqs.length };
   for (const r of reqs) counts[r.status] = (counts[r.status] ?? 0) + 1;
   const flaggedCount = reqs.filter(isOverdue).length;
+  const contentFlagCount = reqs.filter(r => r.flagged_at && !r.is_content_restricted).length;
+  const restrictedCount = reqs.filter(r => r.is_content_restricted).length;
 
   const fmtDl = (iso: string | null) => {
     if (!iso) return null;
@@ -943,8 +985,19 @@ function ConnectionRequests() {
               ⚠ Ack. Overdue ({flaggedCount})
             </button>
           )}
+          {contentFlagCount > 0 && (
+            <button style={{ ...filterBtnStyle("__flagged"), borderColor: filter === "__flagged" ? "#D97706" : BORDER, color: filter === "__flagged" ? "#D97706" : MUTED, background: filter === "__flagged" ? "#FEF9C320" : SURFACE }} onClick={() => setFilter("__flagged")}>
+              🚩 Content Flagged ({contentFlagCount})
+            </button>
+          )}
+          {restrictedCount > 0 && (
+            <button style={{ ...filterBtnStyle("__restricted"), borderColor: filter === "__restricted" ? "#991B1B" : BORDER, color: filter === "__restricted" ? "#991B1B" : MUTED, background: filter === "__restricted" ? "#FEE2E220" : SURFACE }} onClick={() => setFilter("__restricted")}>
+              🚫 Restricted ({restrictedCount})
+            </button>
+          )}
         </div>
       </div>
+      {adminErr && <p style={{ color: "#991B1B", fontSize: "0.8rem", margin: "0.5rem 0 0" }}>{adminErr}</p>}
 
       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
@@ -964,6 +1017,16 @@ function ConnectionRequests() {
           const dl      = fmtDl(req.ack_deadline);
           return (
             <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+              {req.is_content_restricted && (
+                <div style={{ background: "#FEE2E2", borderBottom: `1px solid #FECACA`, padding: "0.4rem 1.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>🚫 CONTENT RESTRICTED — {req.restriction_reason}</span>
+                </div>
+              )}
+              {req.flagged_at && !req.is_content_restricted && (
+                <div style={{ background: "#FFFBEB", borderBottom: `1px solid #FCD34D`, padding: "0.4rem 1.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.72rem", color: "#92400E", fontWeight: 700 }}>🚩 Flagged for review — {req.flag_reason}</span>
+                </div>
+              )}
               {flagged && (
                 <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.4rem 1.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                   <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue (2 business days, ET) — provider has not responded</span>
@@ -1004,6 +1067,45 @@ function ConnectionRequests() {
                       <p style={{ fontSize: "0.875rem", color: TEXT, lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>"{note}"</p>
                     </div>
                   )}
+                  {/* Content moderation panel */}
+                  {req.flagged_at && (
+                    <div style={{ background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem" }}>
+                      <p style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#92400E", margin: "0 0 0.3rem" }}>Content Flag</p>
+                      <p style={{ fontSize: "0.8rem", color: TEXT, margin: "0 0 0.5rem" }}>{req.flag_reason}</p>
+                      {!req.is_content_restricted && restrictingId === req.id ? (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                          <input
+                            value={restrictReason}
+                            onChange={e => setRestrictReason(e.target.value)}
+                            placeholder="Restriction reason (shown to TSE only)…"
+                            style={{ flex: 1, minWidth: 200, padding: "0.4rem 0.6rem", border: `1px solid ${BORDER}`, borderRadius: "6px", fontSize: "0.8rem" }}
+                          />
+                          <button onClick={() => restrictMutation.mutate({ id: req.id, reason: restrictReason })} disabled={!restrictReason.trim() || restrictMutation.isPending}
+                            style={{ background: "#991B1B", color: "#fff", border: "none", borderRadius: "6px", padding: "0.4rem 0.875rem", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
+                            {restrictMutation.isPending ? "…" : "Restrict"}
+                          </button>
+                          <button onClick={() => { setRestrictingId(null); setRestrictReason(""); }}
+                            style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.4rem 0.875rem", fontSize: "0.8rem", cursor: "pointer" }}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : !req.is_content_restricted ? (
+                        <button onClick={() => { setRestrictingId(req.id); setAdminErr(null); }}
+                          style={{ background: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: "6px", padding: "0.35rem 0.75rem", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer" }}>
+                          Restrict Content
+                        </button>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <span style={{ fontSize: "0.78rem", color: "#991B1B", fontWeight: 600 }}>Restricted: {req.restriction_reason}</span>
+                          <button onClick={() => liftMutation.mutate(req.id)} disabled={liftMutation.isPending}
+                            style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #BBF7D0", borderRadius: "6px", padding: "0.3rem 0.6rem", fontWeight: 600, fontSize: "0.75rem", cursor: "pointer" }}>
+                            Lift Restriction
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", gap: "0.75rem", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                     {from_phone !== "—" ? (
                       <a href={`tel:${from_phone.replace(/\D/g, "")}`} style={{ color: TEAL, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none" }}>
@@ -2868,6 +2970,189 @@ function ContentAdmin() {
   );
 }
 
+// ─── Weekly Review ────────────────────────────────────────────────────────────
+function WeeklyReview() {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["admin-weekly-review"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_get_weekly_review");
+      if (error) throw error;
+      return data as {
+        generated_at: string;
+        pending_flags: null | Array<{ id: string; flagged_at: string; flag_reason: string; reporter_name: string | null; notes: string | null; status: string; target_org_name: string | null; requester_name: string | null }>;
+        restricted_content: null | Array<{ id: string; restriction_reason: string; reconsideration_requested_at: string | null; notes: string | null; status: string; target_org_name: string | null; requester_name: string | null }>;
+        unable_to_assist: null | Array<{ id: string; created_at: string; unable_to_assist_category: string; unable_to_assist_note: string | null; notes: string | null; target_org_name: string | null; requester_name: string | null }>;
+        inactivity_flagged: null | Array<{ id: string; created_at: string; inactivity_deadline: string | null; notes: string | null; status: string; target_org_name: string | null; requester_name: string | null; assignee_name: string | null }>;
+      };
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const qc = useQueryClient();
+
+  const liftMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("admin_lift_restriction", { p_request_id: id });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-weekly-review"] }); qc.invalidateQueries({ queryKey: ["admin-requests"] }); },
+  });
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    capacity_full: "Capacity Full",
+    service_mismatch: "Service Mismatch",
+    eligibility: "Eligibility",
+    geographic: "Geographic",
+    provider_declined: "Provider Declined",
+    other: "Other",
+  };
+
+  const fmtDt = (iso: string) => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+
+  if (isLoading) return <p style={{ color: MUTED }}>Loading weekly review…</p>;
+  if (!data) return null;
+
+  const pendingFlags  = data.pending_flags      ?? [];
+  const restricted    = data.restricted_content ?? [];
+  const unableToAssist = data.unable_to_assist   ?? [];
+  const inactivity    = data.inactivity_flagged  ?? [];
+
+  function Section({ title, count, color, children }: { title: string; count: number; color: string; children: React.ReactNode }) {
+    const [open, setOpen] = useState(true);
+    return (
+      <div style={{ marginBottom: "2rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem", cursor: "pointer" }} onClick={() => setOpen(o => !o)}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 700, color: TEXT, margin: 0 }}>{title}</h2>
+          <span style={{ background: color + "20", color, fontSize: "0.72rem", fontWeight: 700, padding: "0.15rem 0.6rem", borderRadius: "9999px" }}>{count}</span>
+          <span style={{ color: MUTED, fontSize: "0.75rem", marginLeft: "auto" }}>{open ? "▲ collapse" : "▼ expand"}</span>
+        </div>
+        {open && children}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: TEXT, margin: "0 0 0.2rem" }}>TSE Weekly Review</h1>
+          <p style={{ color: MUTED, fontSize: "0.875rem", margin: 0 }}>Generated {fmtDt(data.generated_at)} ET · content flags, unable-to-assist cases, inactivity</p>
+        </div>
+        <button onClick={() => refetch()} style={{ padding: "0.5rem 1rem", border: `1px solid ${BORDER}`, borderRadius: "7px", background: SURFACE, color: MUTED, fontSize: "0.8rem", cursor: "pointer" }}>
+          Refresh
+        </button>
+      </div>
+
+      {/* Summary tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "2rem" }}>
+        {[
+          { label: "Pending Flags",    value: pendingFlags.length,  color: "#D97706" },
+          { label: "Restricted",       value: restricted.length,    color: "#991B1B" },
+          { label: "Unable to Assist", value: unableToAssist.length, color: TEAL },
+          { label: "Inactivity",       value: inactivity.length,    color: "#1E40AF" },
+        ].map(t => (
+          <div key={t.label} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderTop: `3px solid ${t.color}`, borderRadius: "8px", padding: "1rem" }}>
+            <p style={{ fontSize: "1.5rem", fontWeight: 800, color: t.color, margin: "0 0 0.2rem" }}>{t.value}</p>
+            <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0 }}>{t.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Pending flags */}
+      <Section title="Pending Content Flags" count={pendingFlags.length} color="#D97706">
+        {pendingFlags.length === 0 ? (
+          <p style={{ color: MUTED, fontSize: "0.875rem" }}>No pending flags.</p>
+        ) : (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+            {pendingFlags.map((f, i) => (
+              <div key={f.id} style={{ padding: "1rem 1.25rem", borderBottom: i < pendingFlags.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{f.requester_name ?? "—"} → {f.target_org_name ?? "—"}</p>
+                    <p style={{ fontSize: "0.78rem", color: "#92400E", margin: "0 0 0.15rem" }}>🚩 {f.flag_reason}</p>
+                    <p style={{ fontSize: "0.72rem", color: MUTED, margin: 0 }}>Flagged {fmtDt(f.flagged_at)} · Reporter: {f.reporter_name ?? "unknown"} · Status: {f.status}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Restricted content */}
+      <Section title="Restricted Content" count={restricted.length} color="#991B1B">
+        {restricted.length === 0 ? (
+          <p style={{ color: MUTED, fontSize: "0.875rem" }}>No restricted requests.</p>
+        ) : (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+            {restricted.map((r, i) => (
+              <div key={r.id} style={{ padding: "1rem 1.25rem", borderBottom: i < restricted.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{r.requester_name ?? "—"} → {r.target_org_name ?? "—"}</p>
+                    <p style={{ fontSize: "0.78rem", color: "#991B1B", margin: "0 0 0.1rem" }}>🚫 {r.restriction_reason}</p>
+                    {r.reconsideration_requested_at && (
+                      <p style={{ fontSize: "0.72rem", color: "#D97706", fontWeight: 600, margin: 0 }}>⚠ Reconsideration requested {fmtDt(r.reconsideration_requested_at)}</p>
+                    )}
+                  </div>
+                  <button onClick={() => liftMutation.mutate(r.id)} disabled={liftMutation.isPending}
+                    style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #BBF7D0", borderRadius: "6px", padding: "0.4rem 0.875rem", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", flexShrink: 0 }}>
+                    Lift Restriction
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Unable to assist */}
+      <Section title="Unable to Assist — Last 30 Days" count={unableToAssist.length} color={TEAL}>
+        {unableToAssist.length === 0 ? (
+          <p style={{ color: MUTED, fontSize: "0.875rem" }}>No unable-to-assist cases in the last 30 days.</p>
+        ) : (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+            {unableToAssist.map((u, i) => (
+              <div key={u.id} style={{ padding: "1rem 1.25rem", borderBottom: i < unableToAssist.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{u.requester_name ?? "—"} → {u.target_org_name ?? "—"}</p>
+                    <p style={{ fontSize: "0.78rem", color: TEAL, margin: "0 0 0.1rem" }}>Category: {CATEGORY_LABELS[u.unable_to_assist_category] ?? u.unable_to_assist_category}</p>
+                    {u.unable_to_assist_note && <p style={{ fontSize: "0.78rem", color: MUTED, margin: 0, fontStyle: "italic" }}>{u.unable_to_assist_note}</p>}
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: MUTED, flexShrink: 0 }}>{fmt(u.created_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Inactivity flagged */}
+      <Section title="Inactivity-Flagged Open Requests" count={inactivity.length} color="#1E40AF">
+        {inactivity.length === 0 ? (
+          <p style={{ color: MUTED, fontSize: "0.875rem" }}>No inactivity-flagged requests.</p>
+        ) : (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
+            {inactivity.map((r, i) => (
+              <div key={r.id} style={{ padding: "1rem 1.25rem", borderBottom: i < inactivity.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>{r.requester_name ?? "—"} → {r.target_org_name ?? "—"}</p>
+                    <p style={{ fontSize: "0.78rem", color: MUTED, margin: "0 0 0.1rem" }}>Status: {r.status} · Assigned: {r.assignee_name ?? "unassigned"}</p>
+                    {r.inactivity_deadline && <p style={{ fontSize: "0.72rem", color: "#1E40AF", fontWeight: 600, margin: 0 }}>Deadline: {fmtDt(r.inactivity_deadline)}</p>}
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: MUTED, flexShrink: 0 }}>{fmt(r.created_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [view, setView] = useState<View>("overview");
   const { signOut } = useAuth();
@@ -2893,8 +3178,9 @@ export default function AdminPage() {
     invitations:   <InvitationsAdmin />,
     crm:           <CRMView />,
     knowledge:     <KnowledgeLibrary />,
-    announcements: <AnnouncementsAdmin />,
-    content:       <ContentAdmin />,
+    announcements:  <AnnouncementsAdmin />,
+    content:        <ContentAdmin />,
+    weekly_review:  <WeeklyReview />,
   }[view];
 
   return (
