@@ -10,6 +10,11 @@ export interface MyRequest {
   ack_deadline: string | null;
   acknowledged_at: string | null;
   resolved_at: string | null;
+  closed_at: string | null;
+  closure_type: string | null;
+  reopen_count: number;
+  reopened_at: string | null;
+  is_inactivity_flagged: boolean;
   target_org: { name: string; org_type: string | null } | null;
 }
 
@@ -28,6 +33,7 @@ export function useMyRequests() {
         .from("connection_requests")
         .select(`
           id, status, created_at, notes, ack_deadline, acknowledged_at, resolved_at,
+          closed_at, closure_type, reopen_count, reopened_at, is_inactivity_flagged,
           target_org:organizations!connection_requests_target_organization_id_fkey(name, org_type)
         `)
         .eq("requesting_user_id", user.id)

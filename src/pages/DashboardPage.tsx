@@ -826,6 +826,115 @@ export default function DashboardPage() {
     onError: (e: Error) => setIncomingError(e.message),
   });
 
+  // Assignment
+  const [assigningTo, setAssigningTo] = useState<string | null>(null);
+  const [assigneeId, setAssigneeId] = useState("");
+  const { data: orgStaff = [] } = useQuery<{ user_id: string; full_name: string; role: string }[]>({
+    queryKey: ["org-staff", incomingOrgId],
+    enabled: !!incomingOrgId,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      if (!incomingOrgId) return [];
+      const { data, error } = await supabase.rpc("get_org_staff", { p_org_id: incomingOrgId });
+      if (error) return [];
+      return (data as { user_id: string; full_name: string; role: string }[]) ?? [];
+    },
+  });
+
+  const assignRequest = useMutation({
+    mutationFn: async ({ reqId, userId }: { reqId: string; userId: string | null }) => {
+      const { error } = await supabase.rpc("assign_request", {
+        p_request_id: reqId,
+        p_assignee_id: userId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setAssigningTo(null);
+      setAssigneeId("");
+      setIncomingError(null);
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+    onError: (e: Error) => setIncomingError(e.message),
+  });
+
+  // Collaboration invitation
+  const [collabModal, setCollabModal] = useState<string | null>(null);
+  const [collabLocationId, setCollabLocationId] = useState("");
+  const [collabMessage, setCollabMessage] = useState("");
+  const { data: invitableLocations = [] } = useQuery<{ location_id: string; location_name: string; org_id: string; org_name: string }[]>({
+    queryKey: ["invitable-locations", incomingOrgId],
+    enabled: !!collabModal,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_invitable_locations", { p_exclude_org_id: incomingOrgId });
+      if (error) return [];
+      return (data as { location_id: string; location_name: string; org_id: string; org_name: string }[]) ?? [];
+    },
+  });
+
+  const inviteCollaborator = useMutation({
+    mutationFn: async ({ reqId, locationId, message }: { reqId: string; locationId: string; message: string }) => {
+      const { error } = await supabase.rpc("invite_collaborator", {
+        p_parent_request_id: reqId,
+        p_target_location_id: locationId,
+        p_message: message || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setCollabModal(null);
+      setCollabLocationId("");
+      setCollabMessage("");
+      setIncomingError(null);
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+    onError: (e: Error) => setIncomingError(e.message),
+  });
+
+  // Close / reopen my own requests
+  const [closingReq, setClosingReq] = useState<string | null>(null);
+  const [closureType, setClosureType] = useState("");
+  const [reopeningReq, setReopeningReq] = useState<string | null>(null);
+  const [reopenNote, setReopenNote] = useState("");
+  const [myReqError, setMyReqError] = useState<string | null>(null);
+
+  const closeRequest = useMutation({
+    mutationFn: async ({ reqId, type }: { reqId: string; type: string }) => {
+      const { error } = await supabase.rpc("close_request", {
+        p_request_id: reqId,
+        p_closure_type: type,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setClosingReq(null);
+      setClosureType("");
+      setMyReqError(null);
+      qcDash.invalidateQueries({ queryKey: ["my-requests"] });
+    },
+    onError: (e: Error) => setMyReqError(e.message),
+  });
+
+  const reopenRequest = useMutation({
+    mutationFn: async ({ reqId, note }: { reqId: string; note: string }) => {
+      const { error } = await supabase.rpc("reopen_request", {
+        p_request_id: reqId,
+        p_reopen_note: note,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setReopeningReq(null);
+      setReopenNote("");
+      setMyReqError(null);
+      qcDash.invalidateQueries({ queryKey: ["my-requests"] });
+    },
+    onError: (e: Error) => setMyReqError(e.message),
+  });
+
   const { data: myLocations } = useQuery({
     queryKey: ["my_locations", myOrg?.id],
     queryFn: async () => {
@@ -1184,37 +1293,137 @@ export default function DashboardPage() {
             {!isLoading && requests.map((req) => {
               const overdue = isAckOverdue(req);
               const deadline = fmtDeadline(req.ack_deadline);
+              const isClosed = !!req.closed_at;
+              const canReopen = isClosed && req.closed_at
+                && (new Date().getTime() - new Date(req.closed_at).getTime()) < 30 * 24 * 60 * 60 * 1000;
+              const isClosingThis = closingReq === req.id;
+              const isReopeningThis = reopeningReq === req.id;
               return (
                 <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  {overdue && (
+                  {req.is_inactivity_flagged && !isClosed && (
+                    <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.35rem 1.25rem" }}>
+                      <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>URGENT REVIEW — no substantive update in 7+ business days</span>
+                    </div>
+                  )}
+                  {!req.is_inactivity_flagged && overdue && (
                     <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.35rem 1.25rem" }}>
                       <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue (2 business days) — TSE has been notified</span>
                     </div>
                   )}
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr", gap: "1rem", padding: "1rem 1.25rem", alignItems: "center" }}>
-                    <div>
-                      <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>
-                        {req.target_org?.name ?? "—"}
-                      </p>
-                      {req.target_org?.org_type && (
-                        <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>
-                          {ORG_TYPE_LABELS[req.target_org.org_type] ?? req.target_org.org_type}
+                  <div style={{ padding: "1rem 1.25rem" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", alignItems: "start" }}>
+                      <div>
+                        <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.15rem" }}>
+                          {req.target_org?.name ?? "—"}
                         </p>
-                      )}
+                        {req.target_org?.org_type && (
+                          <p style={{ color: MUTED, fontSize: "0.75rem", margin: 0 }}>
+                            {ORG_TYPE_LABELS[req.target_org.org_type] ?? req.target_org.org_type}
+                          </p>
+                        )}
+                        {req.reopen_count > 0 && (
+                          <p style={{ fontSize: "0.68rem", color: MUTED, margin: "0.1rem 0 0" }}>Reopened {req.reopen_count}×</p>
+                        )}
+                      </div>
+                      <div>
+                        <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
+                        {deadline && !req.acknowledged_at && !isClosed && (
+                          <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>
+                            Ack. by {deadline}
+                          </p>
+                        )}
+                        {req.acknowledged_at && (
+                          <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
+                        )}
+                        {isClosed && req.closure_type && (
+                          <p style={{ fontSize: "0.68rem", color: MUTED, margin: "0.1rem 0 0" }}>
+                            {req.closure_type.replace(/_/g, " ")}
+                          </p>
+                        )}
+                      </div>
+                      <StatusBadge status={req.status} />
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", alignItems: "flex-end" }}>
+                        {!isClosed && (
+                          <button
+                            onClick={() => { setClosingReq(req.id); setClosureType(""); setMyReqError(null); }}
+                            style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.3rem 0.7rem", fontSize: "0.72rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            Close
+                          </button>
+                        )}
+                        {canReopen && (
+                          <button
+                            onClick={() => { setReopeningReq(req.id); setReopenNote(""); setMyReqError(null); }}
+                            style={{ background: "transparent", color: TEAL, border: `1px solid ${TEAL}`, borderRadius: "5px", padding: "0.3rem 0.7rem", fontSize: "0.72rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            Reopen
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
-                      {deadline && !req.acknowledged_at && req.status !== "resolved" && req.status !== "closed" && (
-                        <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>
-                          Ack. by {deadline}
-                        </p>
-                      )}
-                      {req.acknowledged_at && (
-                        <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
-                      )}
-                    </div>
-                    <StatusBadge status={req.status} />
-                    <div />
+
+                    {/* Close form */}
+                    {isClosingThis && (
+                      <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+                        {myReqError && <p style={{ color: "#991B1B", fontSize: "0.8rem", margin: "0 0 0.5rem" }}>{myReqError}</p>}
+                        <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Close this request</p>
+                        <select
+                          value={closureType}
+                          onChange={e => setClosureType(e.target.value)}
+                          style={{ border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", marginBottom: "0.5rem", width: "100%" }}
+                        >
+                          <option value="">Select reason…</option>
+                          <option value="fulfilled">Fulfilled — need was met</option>
+                          <option value="no_longer_needed">No longer needed</option>
+                          <option value="unable_to_fulfill">Unable to fulfill</option>
+                        </select>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            onClick={() => closeRequest.mutate({ reqId: req.id, type: closureType })}
+                            disabled={closeRequest.isPending || !closureType}
+                            style={{ background: DARK, color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                          >
+                            {closeRequest.isPending ? "Closing…" : "Confirm close"}
+                          </button>
+                          <button
+                            onClick={() => setClosingReq(null)}
+                            style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reopen form */}
+                    {isReopeningThis && (
+                      <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+                        {myReqError && <p style={{ color: "#991B1B", fontSize: "0.8rem", margin: "0 0 0.5rem" }}>{myReqError}</p>}
+                        <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Reopen this request</p>
+                        <textarea
+                          value={reopenNote}
+                          onChange={e => setReopenNote(e.target.value)}
+                          placeholder="Brief explanation (required)…"
+                          rows={2}
+                          style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: "0.5rem" }}
+                        />
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            onClick={() => reopenRequest.mutate({ reqId: req.id, note: reopenNote })}
+                            disabled={reopenRequest.isPending || !reopenNote.trim()}
+                            style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                          >
+                            {reopenRequest.isPending ? "Reopening…" : "Confirm reopen"}
+                          </button>
+                          <button
+                            onClick={() => setReopeningReq(null)}
+                            style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1326,6 +1535,22 @@ export default function DashboardPage() {
                               Respond
                             </button>
                           )}
+                          {req.acknowledged_at && !isClosed && !req.is_collaboration && (
+                            <button
+                              onClick={() => { setCollabModal(req.id); setCollabLocationId(""); setCollabMessage(""); setIncomingError(null); }}
+                              style={{ background: "#EFF6FF", color: "#1E40AF", border: "1px solid #BFDBFE", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Invite provider
+                            </button>
+                          )}
+                          {req.acknowledged_at && !isClosed && (
+                            <button
+                              onClick={() => { setAssigningTo(req.id); setAssigneeId(req.assigned_to ?? ""); setIncomingError(null); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              {req.assigned_to ? "Reassign" : "Assign"}
+                            </button>
+                          )}
                           {/* POC-only: Unable to assist */}
                           {req.acknowledged_at && !isClosed && !req.unable_to_assist_category && (
                             <button
@@ -1398,6 +1623,80 @@ export default function DashboardPage() {
                             </button>
                             <button
                               onClick={() => { setUnableModal(null); setUnableCategory(""); setUnableNote(""); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Assign staff form */}
+                      {assigningTo === req.id && (
+                        <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+                          <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Assign staff member</p>
+                          <select
+                            value={assigneeId}
+                            onChange={e => setAssigneeId(e.target.value)}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", marginBottom: "0.5rem" }}
+                          >
+                            <option value="">Unassigned</option>
+                            {orgStaff.map(s => (
+                              <option key={s.user_id} value={s.user_id}>{s.full_name ?? s.user_id} {s.role === "org_admin" ? "(POC)" : ""}</option>
+                            ))}
+                          </select>
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => assignRequest.mutate({ reqId: req.id, userId: assigneeId || null })}
+                              disabled={assignRequest.isPending}
+                              style={{ background: DARK, color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {assignRequest.isPending ? "Saving…" : "Save assignment"}
+                            </button>
+                            <button
+                              onClick={() => setAssigningTo(null)}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Invite provider / collaboration form */}
+                      {collabModal === req.id && (
+                        <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem", background: "#EFF6FF", borderRadius: "6px", padding: "1rem" }}>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 600, color: TEXT, margin: "0 0 0.25rem" }}>Invite another provider</p>
+                          <p style={{ fontSize: "0.75rem", color: MUTED, margin: "0 0 0.75rem" }}>
+                            A linked collaboration request will be created at the selected location. Original requester is included. Each location has its own 2-business-day acknowledgment deadline.
+                          </p>
+                          <select
+                            value={collabLocationId}
+                            onChange={e => setCollabLocationId(e.target.value)}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", marginBottom: "0.75rem" }}
+                          >
+                            <option value="">Select a member location…</option>
+                            {invitableLocations.map(loc => (
+                              <option key={loc.location_id} value={loc.location_id}>{loc.org_name} — {loc.location_name}</option>
+                            ))}
+                          </select>
+                          <textarea
+                            value={collabMessage}
+                            onChange={e => setCollabMessage(e.target.value)}
+                            placeholder={`Hi [Tagged Provider], our fellow Lattice member, [Requesting Provider], is seeking support. We're unable to assist at this time, but thought your team might be able to help. Could you review this collaboration request and let us know?`}
+                            rows={4}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: "0.75rem" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => inviteCollaborator.mutate({ reqId: req.id, locationId: collabLocationId, message: collabMessage })}
+                              disabled={inviteCollaborator.isPending || !collabLocationId}
+                              style={{ background: "#1E40AF", color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {inviteCollaborator.isPending ? "Sending…" : "Send invitation"}
+                            </button>
+                            <button
+                              onClick={() => { setCollabModal(null); setCollabLocationId(""); setCollabMessage(""); }}
                               style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
                             >
                               Cancel
