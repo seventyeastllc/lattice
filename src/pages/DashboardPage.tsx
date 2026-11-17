@@ -894,6 +894,20 @@ export default function DashboardPage() {
     onError: (e: Error) => setIncomingError(e.message),
   });
 
+  // Org performance report
+  const [showReport, setShowReport] = useState(false);
+  const { data: orgReport, isFetching: reportFetching } = useQuery<Record<string, unknown>>({
+    queryKey: ["org-report", incomingOrgId],
+    enabled: showReport && !!incomingOrgId,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      if (!incomingOrgId) return {};
+      const { data, error } = await supabase.rpc("get_org_request_report", { p_org_id: incomingOrgId });
+      if (error) throw error;
+      return (data as Record<string, unknown>) ?? {};
+    },
+  });
+
   // Close / reopen my own requests
   const [closingReq, setClosingReq] = useState<string | null>(null);
   const [closureType, setClosureType] = useState("");
@@ -1712,6 +1726,126 @@ export default function DashboardPage() {
             <p style={{ fontSize: "0.75rem", color: MUTED, marginTop: "0.5rem" }}>
               Acknowledge within 2 business days (Mon–Fri, excluding U.S. federal holidays, 5 p.m. Eastern). TSE is copied on all requests.
             </p>
+          </div>
+        )}
+
+        {/* Organization Activity Report */}
+        {incomingOrgId && (
+          <div style={{ marginTop: "3rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: TEXT, margin: 0 }}>Organization Activity Report</h2>
+              <button
+                onClick={() => setShowReport(v => !v)}
+                style={{ background: "transparent", color: TEAL, border: `1px solid ${TEAL}`, borderRadius: "6px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+              >
+                {showReport ? "Hide report" : "View report (last 90 days)"}
+              </button>
+            </div>
+            {showReport && (
+              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", padding: "1.5rem" }}>
+                {reportFetching && <p style={{ color: MUTED, fontSize: "0.875rem" }}>Loading…</p>}
+                {!reportFetching && orgReport && (() => {
+                  const n = (k: string) => Number(orgReport[k] ?? 0);
+                  const ackTotal = n("ack_on_time") + n("ack_overdue") + n("ack_pending");
+                  const ackRate = ackTotal > 0 ? Math.round((n("ack_on_time") / ackTotal) * 100) : null;
+                  const unableByCategory = (orgReport.unable_to_assist_by_category ?? {}) as Record<string, number>;
+                  const closedByType = (orgReport.closed_by_type ?? {}) as Record<string, number>;
+                  const catLabels: Record<string, string> = {
+                    capacity_no_availability: "Capacity / no availability",
+                    eligibility: "Eligibility",
+                    service_not_offered: "Service not offered",
+                    outside_service_area: "Outside service area",
+                    temporarily_unavailable: "Temporarily unavailable",
+                    other: "Other",
+                  };
+                  const closureLabels: Record<string, string> = {
+                    fulfilled: "Fulfilled",
+                    no_longer_needed: "No longer needed",
+                    unable_to_fulfill: "Unable to fulfill",
+                    admin_abandoned: "Admin: abandoned",
+                    admin_duplicate: "Admin: duplicate",
+                  };
+                  return (
+                    <div>
+                      <p style={{ fontSize: "0.72rem", color: MUTED, margin: "0 0 1.25rem" }}>
+                        Reporting period: last {n("period_days")} days · Timezone: America/New_York · Organization-only view
+                      </p>
+
+                      {/* Summary tiles */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
+                        {[
+                          { label: "Requests received", value: n("total_incoming") },
+                          { label: "Currently open", value: n("currently_open") },
+                          { label: "Closed this period", value: n("closed_total") },
+                          { label: "Collaborations sent", value: n("collaboration_sent") },
+                          { label: "Inactivity flags", value: n("flagged_inactivity"), alert: n("flagged_inactivity") > 0 },
+                          { label: "Unable to assist", value: n("unable_to_assist_total") },
+                        ].map(({ label, value, alert }) => (
+                          <div key={label} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.875rem 1rem" }}>
+                            <p style={{ fontSize: "1.5rem", fontWeight: 700, color: alert ? "#991B1B" : TEXT, margin: "0 0 0.1rem", lineHeight: 1 }}>{value}</p>
+                            <p style={{ fontSize: "0.72rem", color: MUTED, margin: 0 }}>{label}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Acknowledgment performance */}
+                      <div style={{ marginBottom: "1.25rem" }}>
+                        <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Acknowledgment performance</p>
+                        <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "0.8125rem", color: "#166534" }}>On time: {n("ack_on_time")}</span>
+                          <span style={{ fontSize: "0.8125rem", color: n("ack_overdue") > 0 ? "#991B1B" : MUTED }}>Overdue: {n("ack_overdue")}</span>
+                          <span style={{ fontSize: "0.8125rem", color: MUTED }}>Pending: {n("ack_pending")}</span>
+                          {ackRate !== null && <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT }}>On-time rate: {ackRate}%</span>}
+                        </div>
+                        <p style={{ fontSize: "0.68rem", color: MUTED, margin: "0.3rem 0 0" }}>
+                          Denominator: requests with an acknowledgment deadline in this period. Acknowledgment confirms receipt only, not fulfillment.
+                        </p>
+                      </div>
+
+                      {/* Unable to assist breakdown */}
+                      {Object.keys(unableByCategory).length > 0 && (
+                        <div style={{ marginBottom: "1.25rem" }}>
+                          <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Unable to assist — by reason</p>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                            {Object.entries(unableByCategory).map(([k, v]) => (
+                              <div key={k} style={{ display: "flex", justifyContent: "space-between", maxWidth: "360px" }}>
+                                <span style={{ fontSize: "0.8125rem", color: MUTED }}>{catLabels[k] ?? k}</span>
+                                <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT }}>{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <p style={{ fontSize: "0.68rem", color: MUTED, margin: "0.3rem 0 0" }}>
+                            Included in TSE's weekly follow-up review. These responses do not close the originating need.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Outcomes */}
+                      {Object.keys(closedByType).length > 0 && (
+                        <div style={{ marginBottom: "0.5rem" }}>
+                          <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Closure outcomes</p>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                            {Object.entries(closedByType).map(([k, v]) => (
+                              <div key={k} style={{ display: "flex", justifyContent: "space-between", maxWidth: "360px" }}>
+                                <span style={{ fontSize: "0.8125rem", color: MUTED }}>{closureLabels[k] ?? k}</span>
+                                <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT }}>{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {n("reopened_count") > 0 && (
+                            <p style={{ fontSize: "0.8125rem", color: MUTED, marginTop: "0.4rem" }}>Requests reopened: {n("reopened_count")}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <p style={{ fontSize: "0.68rem", color: MUTED, marginTop: "1rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+                        Provider-reported outcomes only. Administrative closures reported separately. TSE publishes a quarterly network summary. Contact TSE for a detailed report.
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
 
