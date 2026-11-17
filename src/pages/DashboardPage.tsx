@@ -854,7 +854,7 @@ export default function DashboardPage() {
       if (!incomingOrgId) return [];
       const { data, error } = await supabase.rpc("get_org_staff", { p_org_id: incomingOrgId });
       if (error) return [];
-      return (data as { user_id: string; full_name: string; role: string }[]) ?? [];
+      return (data as { user_id: string; full_name: string; role: string; role_label: string }[]) ?? [];
     },
   });
 
