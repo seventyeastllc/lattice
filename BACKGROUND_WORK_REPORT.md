@@ -1,11 +1,41 @@
-# Background Work Report — Phase 9 Final
+# Background Work Report — Phase 10
 **Completed:** 2026-11-16  
-**Commits:** 3d5f3b2 → b894426  
-**Deployed:** https://membership.seedxga.com (Netlify deploy 6afb473d153a8fea481c856f)
+**Commits:** 3d5f3b2 → 663adff  
+**Deployed:** https://membership.seedxga.com (Netlify deploy 6afbc0571c16324b05d96b3a)
 
 ---
 
-## Changes This Session
+## Phase 10 Changes
+
+### 4 — Holiday-Aware Business Days + Connection Request Workflow
+**Migration:** `20261116_phase10_connection_enhancements.sql`
+
+- `us_federal_holidays` table: 2025-2030 U.S. federal holidays with observed dates (66 rows)
+- `is_business_day(date, tz)` helper: excludes weekends + federal holidays
+- `next_business_day_deadline` upgraded from IMMUTABLE (weekends only) → STABLE (holiday-aware); same 5pm ET return
+- Inactivity trigger: 7-business-day `inactivity_deadline` set on every new `connection_requests` INSERT
+- `connection_requests` new columns: response_text, assigned_to, last_substantive_at, inactivity_deadline, is_inactivity_flagged, parent_request_id, is_collaboration, location_id, unable_to_assist_category, unable_to_assist_note, closed_at, closed_by, closure_type, closure_reason, reopened_at, reopen_note, reopen_count, flagged_at, flag_reason, flag_reporter_id, is_content_restricted, restriction_reason, reconsideration_requested_at
+- `submit_request_response(reqId, text)` — in-platform substantive response; resets inactivity clock
+- `mark_unable_to_assist(reqId, category, note)` — POC only; requires category enum + explanatory note
+- `assign_request(reqId, assigneeId)` — POC only; never resets deadlines
+- `close_request(reqId, closure_type, reason?)` — requester or TSE admin; requester closure types: fulfilled/no_longer_needed/unable_to_fulfill; admin adds admin_abandoned/admin_duplicate (require reason)
+- `reopen_request(reqId, note)` — requester or TSE admin; 30-day calendar window; no auto-notification of participants
+- `admin_check_inactivity_flags()` — idempotent; flags requests past 7-business-day inactivity_deadline
+- `get_incoming_connection_requests` and `admin_get_connection_requests` updated with all new fields
+- `benefit_levels` table: approved quantities level 1→3 (2/0/0, 2/4/0, 2/4/2 reviews/intros/sessions)
+- `billing_config.benefit_level_id` FK added (NULL until tier→level mapping confirmed by founder)
+- DashboardPage: in-platform Respond form, Unable to assist (POC only) with category + note, URGENT REVIEW inactivity banner, collaboration badge, holiday-aware acknowledgment deadline text
+- `useIncomingRequests` interface extended with all new fields
+
+**Live verification:**
+- `is_business_day('2026-07-03')` → false (observed Independence Day) ✓
+- `next_business_day_deadline('2026-07-02 10:00+00')` → 2026-07-07 21:00+00 (5pm ET, skips July 3 holiday) ✓
+- `next_business_day_deadline('2026-11-25 10:00+00')` → 2026-11-30 22:00+00 (skips Thanksgiving) ✓
+- 66 holiday rows confirmed in `us_federal_holidays`
+
+---
+
+## Phase 9 Changes (prior)
 
 ### 1 — CEIL Proration for Service Allowances
 **Migration:** `20261116_phase9_service_allowances.sql`
@@ -42,7 +72,7 @@
 
 ---
 
-## Full Migration Order (all applied)
+## Full Migration Order (all applied, in order)
 
 1. `20261115_phase6_locations.sql`
 2. `20261115_phase6b_billing_listing.sql`
@@ -64,6 +94,7 @@
 18. `20261116_phase9_ack_deadline.sql`
 19. `20261116_phase9_seat_reduction.sql`
 20. `20261116_phase9_service_allowances.sql`
+21. `20261116_phase10_connection_enhancements.sql`
 
 ---
 
@@ -88,6 +119,14 @@
 | `get_incoming_connection_requests` | Provider-facing with `is_ack_overdue` |
 | `admin_get_connection_requests` | Admin view; all statuses with deadline |
 | `contacts_poc_change` | Trigger fn; pauses listing + creates poc_change_review task |
+| `is_business_day` | Returns true if date is Mon–Fri excluding U.S. federal holidays |
+| `next_business_day_deadline` | STABLE (was IMMUTABLE); now skips holidays; 5pm ET result |
+| `submit_request_response` | In-platform substantive response; resets inactivity clock |
+| `mark_unable_to_assist` | POC only; requires category enum + note |
+| `assign_request` | POC only; never resets deadlines |
+| `close_request` | Requester (3 types) or TSE admin (5 types) |
+| `reopen_request` | Requester or TSE; 30-day calendar window |
+| `admin_check_inactivity_flags` | Idempotent; flags overdue requests as Abandoned—Pending Review |
 
 ---
 
@@ -138,13 +177,24 @@
 
 1. **Final orientation content** — replace [TEST] placeholder via Admin > Content
 2. **Final Rules of Engagement** — pending legal review; replace [TEST] via Admin > Content  
-3. **Service allowance quantities** — provisional: Collaborator 12/6/4, Strategic 24/12/8, Anchor 0/0/0; configure in `billing_config` via Admin > Billing or direct DB
-4. **Weekly reminder schedule authorization** — documented procedure in `20261116_phase8_reminder_config.sql`; founder must explicitly authorize enabling at Sunday 22:00 UTC
-5. **Fractional service allowance rounding policy** — currently CEIL; if a different policy is required, update `admin_enroll_location_service_allowances`
+3. **Tier → benefit level mapping** — `benefit_levels` table has approved quantities (2/0/0, 2/4/0, 2/4/2). Confirm which tier (Collaborator / Strategic / Anchor) maps to which level (1 / 2 / 3). Then set `benefit_level_id` on each `billing_config` row. CAUTION: existing `service_allowances` rows with test values (12/6/4, 24/12/8) are NOT retroactively reduced — reconcile separately.
+4. **Weekly reminder schedule authorization** — the approved time is Sunday 5pm ET (DST-aware); live schedule disabled until founder explicitly authorizes. Update `20261116_phase8_reminder_config.sql` placeholder bearer token with actual `service_role` key before enabling.
+5. **Fractional service allowance rounding** — currently CEIL per approved standard; no change needed unless founder decides otherwise.
 
 ---
 
-## Remaining Work / Explicitly Deferred
+## Phase 10 Deferred (not yet built)
+
+- **Collaboration invitation flow** (`invite_collaborator` RPC + UI): creates linked child request at another org; each gets its own 2-business-day ack deadline; parent inactivity clock not reset. Deferred — complex data model; backend columns already support it.
+- **Close / reopen UI on DashboardPage**: backend RPCs exist; front-end buttons not yet added to incoming requests panel.
+- **Assignment UI (assign_request)**: RPC exists; no assign-staff dropdown in DashboardPage yet.
+- **Full POC/leadership role designation system**: `org_admin` role serves as POC today; a dedicated `poc` role and `leadership` read-only role require a new role model.
+- **Content flagging and reconsideration**: DB columns exist (`flagged_at`, `is_content_restricted`, etc.); no TSE admin UI for review or in-platform flag button yet.
+- **Organization reporting dashboard**: DB event fields captured; no report view built.
+- **DST-aware Sunday reminder**: confirmed target time is 5pm ET year-round; Supabase scheduled job uses a fixed UTC time and cannot auto-adjust for DST. Resolution options: (a) pg_cron expression at 22:00 UTC (5pm EDT) and 23:00 UTC (5pm EST) alternating with seasonal switch, or (b) Supabase Edge Function cron. Deferred until schedule is authorized.
+- **Weekly TSE review report**: Unable to assist cases need a TSE-facing report; not built.
+
+## Remaining Work / Explicitly Deferred (Phase 9)
 
 - **StaffPanel copy-link fallback visible to org_admin**: the generated invite link is shown in the UI on invite success; no additional changes needed
 - **InvitePage sign-in hint for existing users**: sign-up/sign-in tabs are present in InvitePage; no additional changes needed
