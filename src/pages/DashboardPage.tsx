@@ -767,6 +767,15 @@ export default function DashboardPage() {
   const { data: incomingRequests = [], refetch: refetchIncoming } = useIncomingRequests(incomingOrgId);
 
   const qcDash = useQueryClient();
+
+  // In-platform response state
+  const [respondingTo, setRespondingTo] = useState<string | null>(null);
+  const [responseText, setResponseText] = useState("");
+  const [unableModal, setUnableModal] = useState<string | null>(null);
+  const [unableCategory, setUnableCategory] = useState("");
+  const [unableNote, setUnableNote] = useState("");
+  const [incomingError, setIncomingError] = useState<string | null>(null);
+
   const acknowledgeRequest = useMutation({
     mutationFn: async (reqId: string) => {
       const { data, error } = await supabase.rpc("acknowledge_connection_request", { p_request_id: reqId });
@@ -777,6 +786,44 @@ export default function DashboardPage() {
       refetchIncoming();
       qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
     },
+  });
+
+  const submitResponse = useMutation({
+    mutationFn: async ({ reqId, text }: { reqId: string; text: string }) => {
+      const { error } = await supabase.rpc("submit_request_response", {
+        p_request_id: reqId,
+        p_response_text: text,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setRespondingTo(null);
+      setResponseText("");
+      setIncomingError(null);
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+    onError: (e: Error) => setIncomingError(e.message),
+  });
+
+  const submitUnableToAssist = useMutation({
+    mutationFn: async ({ reqId, category, note }: { reqId: string; category: string; note: string }) => {
+      const { error } = await supabase.rpc("mark_unable_to_assist", {
+        p_request_id: reqId,
+        p_category: category,
+        p_note: note,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setUnableModal(null);
+      setUnableCategory("");
+      setUnableNote("");
+      setIncomingError(null);
+      refetchIncoming();
+      qcDash.invalidateQueries({ queryKey: ["incoming-requests", incomingOrgId] });
+    },
+    onError: (e: Error) => setIncomingError(e.message),
   });
 
   const { data: myLocations } = useQuery({
@@ -1185,63 +1232,186 @@ export default function DashboardPage() {
         {incomingOrgId && incomingRequests.length > 0 && (
           <div style={{ marginTop: "3rem" }}>
             <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: TEXT, margin: "0 0 1.25rem" }}>Incoming Requests</h2>
-            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", padding: "0.75rem 1.25rem", background: BG, borderBottom: `1px solid ${BORDER}` }}>
-                {["From", "Received / Deadline", "Status", ""].map(h => (
-                  <p key={h} style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: MUTED, margin: 0 }}>{h}</p>
-                ))}
+            {incomingError && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem" }}>
+                <p style={{ color: "#991B1B", fontSize: "0.8125rem", margin: 0 }}>{incomingError}</p>
               </div>
+            )}
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: "8px", overflow: "hidden" }}>
               {incomingRequests.map(req => {
                 const overdue = req.is_ack_overdue;
                 const dl = fmtDeadline(req.ack_deadline);
+                const inactivityOverdue = req.is_inactivity_flagged;
+                const isClosed = !!req.closed_at;
+                const isResponding = respondingTo === req.id;
+                const isUnableModal = unableModal === req.id;
                 const typeLabels: Record<string, string> = {
                   facilitated_connection: "Facilitated Connection",
                   case_conference: "Case Conference",
                   information_only: "Information Only",
+                  collaboration: "Collaboration",
+                };
+                const unableCategoryLabels: Record<string, string> = {
+                  capacity_no_availability: "At capacity / no availability",
+                  eligibility: "Eligibility requirements not met",
+                  service_not_offered: "Requested service not offered",
+                  outside_service_area: "Outside service area",
+                  temporarily_unavailable: "Program temporarily unavailable",
+                  other: "Other — please explain",
                 };
                 return (
                   <div key={req.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
-                    {overdue && (
+                    {/* Alert banners */}
+                    {inactivityOverdue && !isClosed && (
+                      <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.3rem 1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>URGENT REVIEW — Abandoned: Pending Review (no substantive update in 7+ business days)</span>
+                      </div>
+                    )}
+                    {!inactivityOverdue && overdue && !isClosed && (
                       <div style={{ background: "#FEF2F2", borderBottom: `1px solid #FECACA`, padding: "0.3rem 1.25rem" }}>
                         <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700 }}>⚠ Acknowledgment overdue — please respond</span>
                       </div>
                     )}
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", padding: "1rem 1.25rem", alignItems: "center" }}>
-                      <div>
-                        <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>
-                          {req.requester_org ?? req.requester_name ?? "—"}
-                        </p>
-                        <p style={{ color: MUTED, fontSize: "0.72rem", margin: 0 }}>{typeLabels[req.request_type] ?? req.request_type}</p>
-                        {req.notes && <p style={{ color: MUTED, fontSize: "0.72rem", margin: "0.1rem 0 0", fontStyle: "italic" }}>{req.notes}</p>}
+                    {req.is_collaboration && (
+                      <div style={{ background: "#EFF6FF", borderBottom: `1px solid #BFDBFE`, padding: "0.3rem 1.25rem" }}>
+                        <span style={{ fontSize: "0.72rem", color: "#1E40AF", fontWeight: 600 }}>Collaboration request</span>
                       </div>
-                      <div>
-                        <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
-                        {!req.acknowledged_at && dl && (
-                          <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>Ack. by {dl}</p>
-                        )}
-                        {req.acknowledged_at && (
-                          <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
-                        )}
+                    )}
+
+                    {/* Main row */}
+                    <div style={{ padding: "1rem 1.25rem" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr auto", gap: "1rem", alignItems: "start" }}>
+                        <div>
+                          <p style={{ fontWeight: 600, color: TEXT, fontSize: "0.875rem", margin: "0 0 0.1rem" }}>
+                            {req.requester_org ?? req.requester_name ?? "—"}
+                          </p>
+                          <p style={{ color: MUTED, fontSize: "0.72rem", margin: 0 }}>{typeLabels[req.request_type] ?? req.request_type}</p>
+                          {req.notes && <p style={{ color: MUTED, fontSize: "0.72rem", margin: "0.1rem 0 0", fontStyle: "italic" }}>{req.notes.slice(0, 120)}{req.notes.length > 120 ? "…" : ""}</p>}
+                          {req.unable_to_assist_category && (
+                            <p style={{ fontSize: "0.72rem", color: "#92400E", background: "#FEF9C3", padding: "0.1rem 0.4rem", borderRadius: "4px", display: "inline-block", margin: "0.25rem 0 0" }}>
+                              Unable to assist: {unableCategoryLabels[req.unable_to_assist_category] ?? req.unable_to_assist_category}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <p style={{ color: MUTED, fontSize: "0.8rem", margin: "0 0 0.1rem" }}>{fmtDate(req.created_at)}</p>
+                          {!req.acknowledged_at && dl && !isClosed && (
+                            <p style={{ fontSize: "0.68rem", color: overdue ? "#991B1B" : MUTED, margin: 0 }}>Ack. by {dl}</p>
+                          )}
+                          {req.acknowledged_at && (
+                            <p style={{ fontSize: "0.68rem", color: "#166534", margin: 0 }}>Acknowledged</p>
+                          )}
+                          {isClosed && req.closure_type && (
+                            <p style={{ fontSize: "0.68rem", color: MUTED, margin: "0.1rem 0 0" }}>
+                              Closed: {req.closure_type.replace(/_/g, " ")}
+                            </p>
+                          )}
+                        </div>
+                        <StatusBadge status={req.status} />
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", alignItems: "flex-end" }}>
+                          {!req.acknowledged_at && !isClosed && (
+                            <button
+                              onClick={() => acknowledgeRequest.mutate(req.id)}
+                              disabled={acknowledgeRequest.isPending}
+                              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Acknowledge
+                            </button>
+                          )}
+                          {req.acknowledged_at && !isClosed && (
+                            <button
+                              onClick={() => { setRespondingTo(req.id); setResponseText(""); setIncomingError(null); }}
+                              style={{ background: DARK, color: "#fff", border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Respond
+                            </button>
+                          )}
+                          {/* POC-only: Unable to assist */}
+                          {req.acknowledged_at && !isClosed && !req.unable_to_assist_category && (
+                            <button
+                              onClick={() => { setUnableModal(req.id); setUnableCategory(""); setUnableNote(""); setIncomingError(null); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Unable to assist
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <StatusBadge status={req.status} />
-                      <div>
-                        {!req.acknowledged_at && (
-                          <button
-                            onClick={() => acknowledgeRequest.mutate(req.id)}
-                            disabled={acknowledgeRequest.isPending}
-                            style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "5px", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+
+                      {/* In-platform response form */}
+                      {isResponding && (
+                        <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem" }}>
+                          <p style={{ fontSize: "0.8125rem", fontWeight: 600, color: TEXT, margin: "0 0 0.5rem" }}>Substantive response</p>
+                          <textarea
+                            value={responseText}
+                            onChange={e => setResponseText(e.target.value)}
+                            placeholder="Describe meaningful progress, a service determination, a concrete barrier, or a next step…"
+                            rows={4}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                            <button
+                              onClick={() => submitResponse.mutate({ reqId: req.id, text: responseText })}
+                              disabled={submitResponse.isPending || !responseText.trim()}
+                              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {submitResponse.isPending ? "Sending…" : "Submit response"}
+                            </button>
+                            <button
+                              onClick={() => { setRespondingTo(null); setResponseText(""); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Unable to assist modal (inline) */}
+                      {isUnableModal && (
+                        <div style={{ marginTop: "0.75rem", borderTop: `1px solid ${BORDER}`, paddingTop: "0.75rem", background: "#FFFBEB", borderRadius: "6px", padding: "1rem" }}>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 600, color: TEXT, margin: "0 0 0.75rem" }}>Unable to assist — POC only</p>
+                          <select
+                            value={unableCategory}
+                            onChange={e => setUnableCategory(e.target.value)}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "0.875rem", marginBottom: "0.75rem", fontFamily: "inherit" }}
                           >
-                            Acknowledge
-                          </button>
-                        )}
-                      </div>
+                            <option value="">Select a reason…</option>
+                            {Object.entries(unableCategoryLabels).map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
+                          </select>
+                          <textarea
+                            value={unableNote}
+                            onChange={e => setUnableNote(e.target.value)}
+                            placeholder="Explanatory note (required)…"
+                            rows={3}
+                            style={{ width: "100%", border: `1px solid ${BORDER}`, borderRadius: "6px", padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: "0.75rem" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              onClick={() => submitUnableToAssist.mutate({ reqId: req.id, category: unableCategory, note: unableNote })}
+                              disabled={submitUnableToAssist.isPending || !unableCategory || !unableNote.trim()}
+                              style={{ background: "#D97706", color: "#fff", border: "none", borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {submitUnableToAssist.isPending ? "Saving…" : "Confirm"}
+                            </button>
+                            <button
+                              onClick={() => { setUnableModal(null); setUnableCategory(""); setUnableNote(""); }}
+                              style={{ background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: "5px", padding: "0.4rem 1rem", fontSize: "0.8125rem", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
             <p style={{ fontSize: "0.75rem", color: MUTED, marginTop: "0.5rem" }}>
-              Acknowledge within 2 business days (Mon–Fri, Eastern Time). TSE is copied on all requests.
+              Acknowledge within 2 business days (Mon–Fri, excluding U.S. federal holidays, 5 p.m. Eastern). TSE is copied on all requests.
             </p>
           </div>
         )}

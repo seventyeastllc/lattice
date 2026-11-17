@@ -10,7 +10,15 @@ export interface IncomingRequest {
   ack_deadline: string | null;
   acknowledged_at: string | null;
   resolved_at: string | null;
+  closed_at: string | null;
+  closure_type: string | null;
   is_ack_overdue: boolean;
+  assigned_to: string | null;
+  is_inactivity_flagged: boolean;
+  inactivity_deadline: string | null;
+  unable_to_assist_category: string | null;
+  parent_request_id: string | null;
+  is_collaboration: boolean;
   requester_name: string | null;
   requester_email: string | null;
   requester_org: string | null;
